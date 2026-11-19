@@ -242,6 +242,32 @@ class StarburstGame {
           this.hud.renderPhase('Title', this.state, this.levels);
         }
       },
+      onToggleNintendoLayout: () => {
+        this.input.setNintendoLayout(!this.input.nintendoFaceLayout);
+        this.hud.setControllerInfo(
+          this.input.gamepadConnected,
+          this.input.gamepadProfile,
+          this.input.gamepadName,
+          this.input.nintendoFaceLayout
+        );
+        if (this.state.phase === 'Title') {
+          this.hud.renderPhase('Title', this.state, this.levels);
+        }
+      },
+      onTestRumble: () => {
+        if (!this.input.gamepadConnected) {
+          return 'PRESS A BUTTON ON YOUR PAD FIRST!';
+        }
+        const ok = this.input.rumble(0.9, 0.7, 280);
+        return ok
+          ? '💥 RUMBLE FIRED!'
+          : 'NO BROWSER RUMBLE ACTUATOR (TIP: PAIR 8BITDO IN X-INPUT MODE: START+X)';
+      },
+      onUiHover: () => this.audio.playUiHover(),
+      onUiConfirm: () => {
+        this.audio.unlock();
+        this.audio.playUiConfirm();
+      },
       onPlayCrawlVO: () => {
         this.startCrawlAudio(true);
       },
@@ -545,6 +571,14 @@ class StarburstGame {
       }
       return;
     }
+
+    // Keep Title Screen live controller status updated whenever you press a button on your Bluetooth pad!
+    this.hud.setControllerInfo(
+      input.gamepadConnected,
+      input.gamepadProfile,
+      input.gamepadName,
+      this.input.nintendoFaceLayout
+    );
 
     if (this.state.phase !== 'Playing') {
       // Allow native Bluetooth Controller A/Start button to navigate Crawl, Title, Pause, LevelClear, GameOver!

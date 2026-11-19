@@ -230,6 +230,40 @@ export class AudioSynth {
     osc.stop(now + 0.6);
   }
 
+  public playUiHover(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(740, now);
+    osc.frequency.exponentialRampToValueAtTime(980, now + 0.04);
+    g.gain.setValueAtTime(0.08, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  }
+
+  public playUiConfirm(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    [523.25, 783.99, 1046.5].forEach((f, i) => {
+      if (!this.ctx || !this.masterGain) return;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i * 0.045);
+      g.gain.setValueAtTime(0.14, now + i * 0.045);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.045 + 0.14);
+      osc.connect(g);
+      g.connect(this.masterGain);
+      osc.start(now + i * 0.045);
+      osc.stop(now + i * 0.045 + 0.15);
+    });
+  }
+
   public playPowerup(): void {
     if (!this.ctx || !this.masterGain || this.muted) return;
     const now = this.ctx.currentTime;

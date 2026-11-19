@@ -162,6 +162,8 @@ body,
 
 /* ==================== BUTTONS & PANELS ==================== */
 .neon-btn {
+  position: relative;
+  overflow: hidden;
   font-family: var(--font-display);
   font-size: 0.9rem;
   font-weight: 700;
@@ -169,18 +171,40 @@ body,
   text-transform: uppercase;
   padding: 12px 26px;
   color: #fff;
-  background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(255, 42, 133, 0.22));
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.22), rgba(255, 42, 133, 0.25));
   border: 1.5px solid var(--cyan);
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
-  box-shadow: 0 0 18px rgba(0, 240, 255, 0.28), inset 0 0 12px rgba(0, 240, 255, 0.12);
-  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.3), inset 0 0 14px rgba(0, 240, 255, 0.14);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
+.neon-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -75%;
+  width: 45%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-24deg);
+  transition: left 0.45s ease;
+  pointer-events: none;
+}
+
+.neon-btn:hover::after {
+  left: 135%;
 }
 
 .neon-btn:hover {
-  transform: translateY(-2px) scale(1.02);
-  background: linear-gradient(135deg, rgba(0, 240, 255, 0.38), rgba(255, 42, 133, 0.38));
-  box-shadow: 0 0 28px rgba(0, 240, 255, 0.65), inset 0 0 16px rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px) scale(1.03);
+  border-color: var(--gold);
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.4), rgba(255, 42, 133, 0.42));
+  box-shadow: 0 0 32px rgba(0, 240, 255, 0.7), 0 0 18px rgba(255, 212, 71, 0.45), inset 0 0 16px rgba(255, 255, 255, 0.22);
+}
+
+.neon-btn:active {
+  transform: translateY(0px) scale(0.98);
 }
 
 .neon-btn.secondary {
@@ -754,12 +778,45 @@ body,
 
 .tally-rank {
   font-family: var(--font-display);
-  font-size: 4.5rem;
+  font-size: 5rem;
   font-weight: 900;
   color: var(--gold);
-  text-shadow: 0 0 32px rgba(255, 212, 71, 0.9);
+  text-shadow: 0 0 36px rgba(255, 212, 71, 0.95), 0 0 70px rgba(255, 42, 133, 0.55);
   margin: 4px 0 18px;
   line-height: 1;
+  animation: rank-slam 0.55s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+}
+
+@keyframes rank-slam {
+  0% {
+    opacity: 0;
+    transform: scale(2.8) rotate(-14deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.pad-status-bar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 8px 16px;
+  background: rgba(4, 14, 34, 0.82);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  border-radius: 6px;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--cyan);
+}
+
+.pad-status-bar .rumble-msg {
+  color: var(--gold);
 }
 
 .tally-rows {

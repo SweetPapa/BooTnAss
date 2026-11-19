@@ -24,6 +24,10 @@ export interface HudCallbacks {
   onResume: () => void;
   onToggleMouseAim: () => void;
   onToggleMute: () => void;
+  onToggleNintendoLayout: () => void;
+  onTestRumble: () => string;
+  onUiHover: () => void;
+  onUiConfirm: () => void;
   onPlayCrawlVO: () => void;
 }
 
@@ -142,9 +146,30 @@ export class HUD {
   private bombPill: HTMLElement | null = null;
   private padPill: HTMLElement | null = null;
   private hasBossCheckpoint = false;
+  private controllerLabel = 'NO CONTROLLER DETECTED (PRESS ANY PAD BUTTON)';
+  private nintendoLayout = false;
 
   public setBossCheckpoint(active: boolean): void {
     this.hasBossCheckpoint = active;
+  }
+
+  public setControllerInfo(connected: boolean, profile: string, name: string, nintendoLayout: boolean): void {
+    this.nintendoLayout = nintendoLayout;
+    if (connected) {
+      const shortName = name.length > 34 ? name.slice(0, 34) + '…' : name;
+      this.controllerLabel = `🎮 ${profile.toUpperCase()} READY // ${shortName}`;
+    } else {
+      this.controllerLabel = 'NO CONTROLLER DETECTED (PRESS ANY PAD BUTTON)';
+    }
+    const labelEl = document.getElementById('pad-status-label');
+    if (labelEl) labelEl.textContent = this.controllerLabel;
+  }
+
+  private bindArcadeButtonJuice(): void {
+    this.root.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('mouseenter', () => this.cb.onUiHover());
+      btn.addEventListener('click', () => this.cb.onUiConfirm());
+    });
   }
 
   private bannerTimer = 0;
@@ -353,13 +378,23 @@ export class HUD {
             <button id="btn-levels" class="neon-btn secondary">SELECT SECTOR</button>
             <button id="btn-story" class="neon-btn secondary">OPENING CRAWL</button>
           </div>
-          <div class="menu-actions" style="margin-bottom:20px;">
+          <div class="menu-actions" style="margin-bottom:14px;">
             <button id="btn-mouse-aim" class="neon-btn small secondary">
               MOUSE AIM: ${state.mouseAimEnabled ? 'ON' : 'OFF'}
             </button>
             <button id="btn-mute" class="neon-btn small secondary">
               AUDIO: ${state.muted ? 'MUTED' : 'ON'}
             </button>
+            <button id="btn-pad-layout" class="neon-btn small secondary">
+              PAD A/B: ${this.nintendoLayout ? '8BITDO / NINTENDO' : 'XBOX / PS'}
+            </button>
+            <button id="btn-test-rumble" class="neon-btn small secondary">
+              TEST RUMBLE
+            </button>
+          </div>
+          <div class="pad-status-bar">
+            <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
+            <span id="rumble-feedback" class="rumble-msg"></span>
           </div>
           <div class="controls-grid">
             <div class="control-item"><span class="control-key">WASD / L-STICK</span> Fly &amp; Bank</div>
@@ -380,6 +415,13 @@ export class HUD {
     document.getElementById('btn-story')?.addEventListener('click', () => this.cb.onReplayCrawl());
     document.getElementById('btn-mouse-aim')?.addEventListener('click', () => this.cb.onToggleMouseAim());
     document.getElementById('btn-mute')?.addEventListener('click', () => this.cb.onToggleMute());
+    document.getElementById('btn-pad-layout')?.addEventListener('click', () => this.cb.onToggleNintendoLayout());
+    document.getElementById('btn-test-rumble')?.addEventListener('click', () => {
+      const msg = this.cb.onTestRumble();
+      const el = document.getElementById('rumble-feedback');
+      if (el) el.textContent = msg;
+    });
+    this.bindArcadeButtonJuice();
   }
 
   private renderLevelSelect(levels: LevelConfig[]): void {

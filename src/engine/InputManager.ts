@@ -1,7 +1,9 @@
+export type ControllerProfile = 'xbox' | 'playstation' | 'nintendo' | '8bitdo' | 'generic';
+
 export interface InputState {
   moveX: number; // -1..1
   moveY: number; // -1..1
-  aimStickX: number; // Right stick fine aim (-1..1)
+  aimStickX: number;
   aimStickY: number;
   fire: boolean;
   chargeLock: boolean;
@@ -17,6 +19,8 @@ export interface InputState {
   menuConfirmPressed: boolean;
   gamepadConnected: boolean;
   gamepadName: string;
+  gamepadProfile: ControllerProfile;
+  rumbleSupported: boolean;
 }
 
 export class InputManager {
@@ -33,10 +37,13 @@ export class InputManager {
   private pauseQueued = false;
   private menuConfirmQueued = false;
 
-  // Gamepad edge-detection state
+  // Gamepad state & universal profile mapping
   private prevPadButtons: boolean[] = [];
   public gamepadConnected = false;
   public gamepadName = '';
+  public gamepadProfile: ControllerProfile = 'generic';
+  public nintendoFaceLayout = false; // Auto-set for Nintendo/8BitDo Switch layout, toggleable by user
+  private userOverrodeLayout = false;
 
   // Double-tap A/D detection
   private lastTapKey: string | null = null;
@@ -54,9 +61,36 @@ export class InputManager {
     window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
   }
 
+  public setNintendoLayout(enabled: boolean): void {
+    this.nintendoFaceLayout = enabled;
+    this.userOverrodeLayout = true;
+  }
+
+  private detectProfile(id: string): ControllerProfile {
+    const low = id.toLowerCase();
+    if (low.includes('8bitdo') || low.includes('2dc8') || low.includes('sf30') || low.includes('sn30') || low.includes('f30')) {
+      return '8bitdo';
+    }
+    if (low.includes('nintendo') || low.includes('switch') || low.includes('pro controller') || low.includes('057e')) {
+      return 'nintendo';
+    }
+    if (low.includes('dualsense') || low.includes('dualshock') || low.includes('playstation') || low.includes('054c')) {
+      return 'playstation';
+    }
+    if (low.includes('xbox') || low.includes('xinput') || low.includes('045e')) {
+      return 'xbox';
+    }
+    return 'generic';
+  }
+
   private onGamepadConnected = (e: GamepadEvent): void => {
     this.gamepadConnected = true;
     this.gamepadName = e.gamepad.id;
+    this.gamepadProfile = this.detectProfile(e.gamepad.id);
+    if (!this.userOverrodeLayout) {
+      this.nintendoFaceLayout =
+        this.gamepadProfile === 'nintendo' || this.gamepadProfile === '8bitdo';
+    }
   };
 
   private onGamepadDisconnected = (): void => {
@@ -64,33 +98,72 @@ export class InputManager {
     const active = Array.from(pads).find((p) => p && p.connected);
     this.gamepadConnected = Boolean(active);
     this.gamepadName = active ? active.id : '';
+    this.gamepadProfile = active ? this.detectProfile(active.id) : 'generic';
   };
 
+  public hasRumbleSupport(): boolean {
+    const pad = this.getActiveGamepad();
+    if (!pad) return false;
+    const anyPad = pad as unknown as {
+      vibrationActuator?: { playEffect?: unknown };
+      hapticActuators?: Array<{ pulse?: unknown }>;
+    };
+    return Boolean(
+      (anyPad.vibrationActuator && typeof anyPad.vibrationActuator.playEffect === 'function') ||
+        (anyPad.hapticActuators && anyPad.hapticActuators.length > 0 && typeof anyPad.hapticActuators[0]?.pulse === 'function')
+    );
+  }
+
   /**
-   * Triggers native Bluetooth controller haptic rumble (Xbox / DualSense / Switch Pro / 8BitDo).
+   * Triggers universal haptic rumble across Chrome/Edge (`vibrationActuator`)
+   * AND Safari/Firefox (`hapticActuators`). Returns true if an actuator was triggered.
    */
-  public rumble(strong = 0.5, weak = 0.3, durationMs = 120): void {
+  public rumble(strong = 0.6, weak = 0.4, durationMs = 150): boolean {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let fired = false;
     for (const pad of pads) {
       if (!pad || !pad.connected) continue;
-      const actuator = (pad as unknown as {
+      const anyPad = pad as unknown as {
         vibrationActuator?: {
+          type?: string;
           playEffect?: (
             type: string,
-            params: { duration: number; strongMagnitude: number; weakMagnitude: number }
-          ) => Promise<void>;
+            params: {
+              startDelay: number;
+              duration: number;
+              strongMagnitude: number;
+              weakMagnitude: number;
+            }
+          ) => Promise<string>;
         };
-      }).vibrationActuator;
-      if (actuator && typeof actuator.playEffect === 'function') {
-        actuator
-          .playEffect('dual-rumble', {
+        hapticActuators?: Array<{
+          pulse?: (value: number, duration: number) => Promise<boolean>;
+        }>;
+      };
+
+      const s = Math.min(1, Math.max(0, strong));
+      const w = Math.min(1, Math.max(0, weak));
+
+      if (anyPad.vibrationActuator && typeof anyPad.vibrationActuator.playEffect === 'function') {
+        const effectType = anyPad.vibrationActuator.type === 'trigger-rumble' ? 'trigger-rumble' : 'dual-rumble';
+        anyPad.vibrationActuator
+          .playEffect(effectType, {
+            startDelay: 0,
             duration: durationMs,
-            strongMagnitude: Math.min(1, Math.max(0, strong)),
-            weakMagnitude: Math.min(1, Math.max(0, weak)),
+            strongMagnitude: s,
+            weakMagnitude: w,
           })
           .catch(() => {});
+        fired = true;
+      } else if (anyPad.hapticActuators && anyPad.hapticActuators.length > 0) {
+        const act = anyPad.hapticActuators[0];
+        if (act && typeof act.pulse === 'function') {
+          act.pulse(Math.max(s, w), durationMs).catch(() => {});
+          fired = true;
+        }
       }
     }
+    return fired;
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -110,15 +183,9 @@ export class InputManager {
     this.keys.add(code);
 
     if (isFresh) {
-      if (code === 'Escape' || code === 'KeyP') {
-        this.pauseQueued = true;
-      }
-      if (code === 'KeyR') {
-        this.somersaultQueued = true;
-      }
-      if (code === 'KeyB' || code === 'KeyG') {
-        this.novaBombQueued = true;
-      }
+      if (code === 'Escape' || code === 'KeyP') this.pauseQueued = true;
+      if (code === 'KeyR') this.somersaultQueued = true;
+      if (code === 'KeyB' || code === 'KeyG') this.novaBombQueued = true;
       if (code === 'KeyQ') {
         this.pendingRollDir = -1;
       } else if (code === 'KeyE') {
@@ -179,12 +246,34 @@ export class InputManager {
     for (const p of pads) {
       if (p && p.connected) {
         this.gamepadConnected = true;
-        this.gamepadName = p.id;
+        if (this.gamepadName !== p.id) {
+          this.gamepadName = p.id;
+          this.gamepadProfile = this.detectProfile(p.id);
+          if (!this.userOverrodeLayout) {
+            this.nintendoFaceLayout =
+              this.gamepadProfile === 'nintendo' || this.gamepadProfile === '8bitdo';
+          }
+        }
         return p;
       }
     }
     this.gamepadConnected = false;
     return null;
+  }
+
+  /**
+   * Decodes POV Hat axis (axes[9]) used by 8BitDo / D-Input controllers on macOS.
+   */
+  private decodePovHat(val: number): { x: number; y: number } {
+    if (val > 1.1 || val < -1.1) return { x: 0, y: 0 }; // Neutral (~3.28)
+    if (val < -0.85) return { x: 0, y: 1 }; // Up (-1.0)
+    if (val < -0.57) return { x: 1, y: 1 }; // Up-Right (-0.71)
+    if (val < -0.28) return { x: 1, y: 0 }; // Right (-0.43)
+    if (val < 0.0) return { x: 1, y: -1 }; // Down-Right (-0.14)
+    if (val < 0.28) return { x: 0, y: -1 }; // Down (+0.14)
+    if (val < 0.57) return { x: -1, y: -1 }; // Down-Left (+0.43)
+    if (val < 0.85) return { x: -1, y: 0 }; // Left (+0.71)
+    return { x: -1, y: 1 }; // Up-Left (+1.0)
   }
 
   public poll(): InputState {
@@ -217,7 +306,6 @@ export class InputManager {
     let menuConfirmPressed = this.menuConfirmQueued;
     this.menuConfirmQueued = false;
 
-    // Native Bluetooth / USB Gamepad Support (Standard Mapping: Xbox, DualSense, Switch Pro, 8BitDo)
     const pad = this.getActiveGamepad();
     if (pad) {
       const deadzone = 0.16;
@@ -229,43 +317,65 @@ export class InputManager {
       const gx = Math.abs(ax0) > deadzone ? ax0 : 0;
       const gy = Math.abs(ax1) > deadzone ? -ax1 : 0;
 
-      // D-pad fallback / precision flying
-      const dUp = pad.buttons[12]?.pressed ? 1 : 0;
-      const dDown = pad.buttons[13]?.pressed ? -1 : 0;
-      const dLeft = pad.buttons[14]?.pressed ? -1 : 0;
-      const dRight = pad.buttons[15]?.pressed ? 1 : 0;
+      // Standard D-pad buttons (12..15) OR macOS 8BitDo/D-Input POV Hat (axes[9])
+      let dX = (pad.buttons[15]?.pressed ? 1 : 0) - (pad.buttons[14]?.pressed ? 1 : 0);
+      let dY = (pad.buttons[12]?.pressed ? 1 : 0) - (pad.buttons[13]?.pressed ? 1 : 0);
+      if (dX === 0 && dY === 0 && pad.axes.length >= 10) {
+        const hat = this.decodePovHat(pad.axes[9]);
+        dX = hat.x;
+        dY = hat.y;
+      }
 
       if (gx !== 0) moveX = gx;
-      else if (dLeft + dRight !== 0) moveX = dLeft + dRight;
+      else if (dX !== 0) moveX = dX;
 
       if (gy !== 0) moveY = gy;
-      else if (dUp + dDown !== 0) moveY = dUp + dDown;
+      else if (dY !== 0) moveY = dY;
 
-      // Right stick fine reticle aim
-      if (Math.abs(ax2) > deadzone) aimStickX = ax2;
-      if (Math.abs(ax3) > deadzone) aimStickY = -ax3;
+      // Right stick fine reticle aim (if controller has dual sticks)
+      if (pad.axes.length >= 4) {
+        if (Math.abs(ax2) > deadzone) aimStickX = ax2;
+        if (Math.abs(ax3) > deadzone) aimStickY = -ax3;
+      }
 
-      const btn = (idx: number) => Boolean(pad.buttons[idx]?.pressed || (pad.buttons[idx]?.value ?? 0) > 0.35);
+      const btn = (idx: number) =>
+        Boolean(pad.buttons[idx]?.pressed || (pad.buttons[idx]?.value ?? 0) > 0.35);
       const freshBtn = (idx: number) => btn(idx) && !this.prevPadButtons[idx];
 
-      // A (0) or RT (7) = Rapid Fire
-      if (btn(0) || btn(7)) fire = true;
-      // B (1) or LT (6) = Hold Quad Lock-On
-      if (btn(1) || btn(6)) chargeLock = true;
-      // LB (4) = Barrel Roll Left, RB (5) = Barrel Roll Right
-      if (freshBtn(4)) barrelRollDir = -1;
-      if (freshBtn(5)) barrelRollDir = 1;
-      // Y (3) = Somersault Backflip + EMP
-      if (freshBtn(3)) somersaultPressed = true;
-      // X (2) = Nova Smart Bomb
-      if (freshBtn(2)) novaBombPressed = true;
-      // L3 (10) = Boost, R3 (11) = Brake
-      if (btn(10)) boost = true;
-      if (btn(11)) brake = true;
-      // Start / Options (9) = Pause
-      if (freshBtn(9)) pausePressed = true;
-      // Menu Confirm (A or Start)
-      if (freshBtn(0) || freshBtn(9)) menuConfirmPressed = true;
+      // Universal face button mapping:
+      // Standard (Xbox/PS): South=0 (Fire/Confirm), East=1 (Lock), West=2 (Nova), North=3 (Somersault)
+      // Nintendo / 8BitDo Switch Layout: East=0 or 1 swapped -> keep physical South/East intuitive!
+      const isNonStandard = pad.mapping !== 'standard';
+      const fireBtnIdx = this.nintendoFaceLayout ? (isNonStandard ? 0 : 1) : 0;
+      const lockBtnIdx = this.nintendoFaceLayout ? (isNonStandard ? 1 : 0) : 1;
+      const bombBtnIdx = this.nintendoFaceLayout ? (isNonStandard ? 3 : 2) : 2;
+      const flipBtnIdx = this.nintendoFaceLayout ? (isNonStandard ? 4 : 3) : 3;
+
+      const lbIdx = isNonStandard ? 6 : 4;
+      const rbIdx = isNonStandard ? 7 : 5;
+      const ltIdx = isNonStandard ? 8 : 6;
+      const rtIdx = isNonStandard ? 9 : 7;
+      const startIdx = isNonStandard ? 11 : 9;
+
+      // Analog trigger axis fallback (some macOS controllers map L2/R2 to axes 4 & 5)
+      const ltAxis = pad.axes.length >= 6 && pad.axes[4] > 0.25;
+      const rtAxis = pad.axes.length >= 6 && pad.axes[5] > 0.25;
+
+      if (btn(fireBtnIdx) || btn(rtIdx) || rtAxis) fire = true;
+      if (btn(lockBtnIdx) || btn(ltIdx) || ltAxis) chargeLock = true;
+      if (freshBtn(lbIdx)) barrelRollDir = -1;
+      if (freshBtn(rbIdx)) barrelRollDir = 1;
+      if (freshBtn(flipBtnIdx)) somersaultPressed = true;
+      if (freshBtn(bombBtnIdx)) novaBombPressed = true;
+
+      // L3 (10) = Boost, R3 (11) = Brake (when standard)
+      if (!isNonStandard) {
+        if (btn(10)) boost = true;
+        if (btn(11)) brake = true;
+      }
+
+      if (freshBtn(startIdx)) pausePressed = true;
+      if (freshBtn(fireBtnIdx) || freshBtn(startIdx)) menuConfirmPressed = true;
 
       this.prevPadButtons = pad.buttons.map((_, idx) => btn(idx));
     } else {
@@ -300,6 +410,8 @@ export class InputManager {
       menuConfirmPressed,
       gamepadConnected: this.gamepadConnected,
       gamepadName: this.gamepadName,
+      gamepadProfile: this.gamepadProfile,
+      rumbleSupported: this.hasRumbleSupport(),
     };
   }
 
