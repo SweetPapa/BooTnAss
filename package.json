@@ -1,0 +1,24 @@
+{
+  "name": "starburst",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "gen-level": "node scripts/gen-level.mjs"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "postprocessing": "^6.36.7",
+    "three": "^0.175.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/three": "^0.175.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
