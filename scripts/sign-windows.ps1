@@ -24,19 +24,44 @@ if (-not (Test-Path $signExe)) {
     throw "the 'sign' tool is not installed: dotnet tool install --global sign --prerelease"
 }
 
-Write-Host "[sign-windows] signing $file"
-& $signExe code trusted-signing (Split-Path -Leaf $file) `
-    --base-directory (Split-Path -Parent $file) `
-    --trusted-signing-endpoint $meta.Endpoint `
-    --trusted-signing-account $meta.CodeSigningAccountName `
-    --trusted-signing-certificate-profile $meta.CertificateProfileName `
-    --description $Description `
-    --description-url 'https://github.com/SweetPapa/BooTnAss' `
-    --timestamp-url 'http://timestamp.acs.microsoft.com' `
-    --file-digest SHA256 `
-    --verbosity Warning
-if ($LASTEXITCODE -ne 0) { throw "sign exited with $LASTEXITCODE for $file" }
+$maxAttempts = 3
+$lastOut = ''
+$signed = $false
+
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    Write-Host "[sign-windows] attempt $attempt/$maxAttempts signing $file"
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $lastOut = (& $signExe code trusted-signing (Split-Path -Leaf $file) `
+        --base-directory (Split-Path -Parent $file) `
+        --trusted-signing-endpoint $meta.Endpoint `
+        --trusted-signing-account $meta.CodeSigningAccountName `
+        --trusted-signing-certificate-profile $meta.CertificateProfileName `
+        --description $Description `
+        --description-url 'https://github.com/SweetPapa/BooTnAss' `
+        --timestamp-url 'http://timestamp.acs.microsoft.com' `
+        --file-digest SHA256 `
+        --verbosity Information 2>&1 | Out-String)
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prevPref
+
+    if ($code -eq 0) {
+        $signed = $true
+        break
+    }
+
+    Write-Host "[sign-windows] attempt $attempt failed (exit $code): $lastOut"
+    if ($attempt -lt $maxAttempts) {
+        Start-Sleep -Seconds 5
+    }
+}
+
+if (-not $signed) {
+    throw "sign exited with $code for $file`n$lastOut"
+}
 
 $sig = Get-AuthenticodeSignature $file
 Write-Host "[sign-windows] $($sig.Status): $($sig.SignerCertificate.Subject)"
-if ($sig.Status -ne 'Valid') { throw "signature on $file is $($sig.Status)" }
+if ($sig.Status -ne 'Valid') {
+    throw "signature on $file is $($sig.Status)"
+}

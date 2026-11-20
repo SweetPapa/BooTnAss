@@ -184,10 +184,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
 
       - name: Sync version
         shell: bash
         run: node scripts/set-version.mjs "${{ needs.meta.outputs.version }}"
+
+      - name: Pre-compile frontend & Rust binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          cargo build --release --manifest-path src-tauri/Cargo.toml
 
       - name: Azure login (OIDC)
         id: az
@@ -203,13 +212,12 @@ jobs:
         shell: bash
         run: dotnet tool install --global sign --prerelease
 
-      - name: Build (and sign via Azure Trusted Signing)
+      - name: Bundle & sign via Azure Trusted Signing
         shell: bash
         env:
           SIGNED: ${{ steps.az.outcome == 'success' }}
         run: |
           set -euo pipefail
-          npm ci
           ARGS=(--bundles nsis)
           if [ "$SIGNED" = true ]; then
             ARGS=(--config src-tauri/tauri.windows-sign.conf.json --bundles nsis)
