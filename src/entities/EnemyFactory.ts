@@ -23,6 +23,7 @@ export interface EnemyEntity extends HomingTarget {
   speedZ: number;
   hitFlashTimer: number;
   originalMats: Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
+  pursuingAlly?: 'blitz' | 'tank' | null;
 }
 
 const WHITE_FLASH_MAT = new THREE.MeshBasicMaterial({
@@ -298,6 +299,12 @@ export class EnemyFactory {
       }
 
       const pos = e.mesh.position;
+      // If this enemy is actively chasing a wingman, let WingmanSquadron steer its pursuit position!
+      if (e.pursuingAlly) {
+        if (e.kind === 'turret') e.mesh.rotation.z += dt * 1.9;
+        continue;
+      }
+
       if (e.behavior === 'straight') {
         pos.z += (e.speedZ + railSpeed * 0.28) * dt;
       } else if (e.behavior === 'sine_weave') {

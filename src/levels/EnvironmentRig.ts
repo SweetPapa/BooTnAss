@@ -444,23 +444,26 @@ export class EnvironmentRig {
       }
       curve.offsetAtZ(c.baseZ, off);
       c.group.position.set(off.dx, off.dy, c.baseZ);
-      // Subtle horizon tilt into the curve for dynamic space-coaster vibes!
-      const depthT = Math.min(1, Math.max(0, -c.baseZ) / 140);
-      c.group.rotation.z = -curve.bankRoll * depthT * 0.55;
+      // Dynamic horizon tilt + corkscrew helical twist along the curving space-coaster ahead!
+      const depthT = Math.min(1.25, Math.max(0, -c.baseZ) / 135);
+      c.group.rotation.z = -curve.bankRoll * depthT * 0.55 + curve.tunnelTwist * depthT;
     }
 
     if (this.horizonGroup) {
-      this.horizonGroup.position.x = curve.curveX * 2.4;
-      this.horizonGroup.position.y = 16 + curve.curveY * 1.4;
+      this.horizonGroup.position.x = curve.curveX * 2.5;
+      // During 360-degree loops, sweep the giant cosmic landmark across the sky arc!
+      const loopY = curve.horizonLoopAngle > 0 ? Math.sin(curve.horizonLoopAngle) * 58 : 0;
+      this.horizonGroup.position.y = 16 + curve.curveY * 1.45 + loopY;
     }
     this.rotatingLandmarks.forEach((lm, idx) => {
       lm.rotation.y += dt * (idx % 2 === 0 ? 0.14 : -0.22);
       lm.rotation.z += dt * (idx % 2 === 0 ? 0.08 : -0.12);
     });
 
+    const highSpeed = isBoosting || curve.stuntSpeedMult > 1.12;
     // Scroll stars
     const posAttr = this.starPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const starSpeed = railSpeed * (isBoosting ? 2.6 : 1.3);
+    const starSpeed = railSpeed * (highSpeed ? 2.75 : 1.38);
     for (let i = 0; i < posAttr.count; i++) {
       let z = posAttr.getZ(i) + starSpeed * dt;
       if (z > 16) z -= 290;
@@ -468,12 +471,12 @@ export class EnvironmentRig {
     }
     posAttr.needsUpdate = true;
 
-    // Racing wind/speed lines (always subtle at high speed, blazing bright when boosting!)
+    // Racing wind/speed lines (always crisp at high speed, blazing during boosts & stunts!)
     const lineMat = this.speedLines.material as THREE.LineBasicMaterial;
-    const targetOpacity = isBoosting ? 0.92 : 0.22;
+    const targetOpacity = highSpeed ? 0.92 : 0.28;
     lineMat.opacity += (targetOpacity - lineMat.opacity) * Math.min(1, dt * 8);
     const lp = this.speedLines.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const lineSpd = railSpeed * (isBoosting ? 3.5 : 1.9);
+    const lineSpd = railSpeed * (highSpeed ? 3.6 : 2.05);
     for (let i = 0; i < lp.count; i += 2) {
       let z1 = lp.getZ(i) + lineSpd * dt;
       if (z1 > 15) z1 -= 130;

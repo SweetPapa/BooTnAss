@@ -4,6 +4,7 @@ import type { LevelConfig } from '../levels/LevelSchema';
 import type { LevelLoadError } from '../levels/LevelLoader';
 import { Leaderboard } from '../engine/Leaderboard';
 import { UPGRADE_DEFS, type MetaProgression, type UpgradeKey } from '../engine/MetaProgression';
+import type { WingmanHudEntry } from '../entities/WingmanSquadron';
 
 export interface StoryCrawlData {
   episode: string;
@@ -56,7 +57,7 @@ export interface LoadoutHudState {
   gamepadConnected: boolean;
 }
 
-export type CommsSpeaker = 'commander' | 'wingman' | 'boss' | 'grunt' | 'mechanic';
+export type CommsSpeaker = 'commander' | 'wingman' | 'boss' | 'grunt' | 'mechanic' | 'blitz' | 'tank';
 
 const LEVEL_ART_MAP: Record<string, string> = {
   'neon-canyon': '/assets/art/level-01.jpg',
@@ -95,6 +96,13 @@ export class HUD {
   private screenFlashEl: HTMLElement | null = null;
   private stampLayerEl: HTMLElement | null = null;
   private energyVignetteEl: HTMLElement | null = null;
+  private wingmanWrapEl: HTMLElement | null = null;
+  private distressLayerEl: HTMLElement | null = null;
+  private cinemaTopEl: HTMLElement | null = null;
+  private cinemaBotEl: HTMLElement | null = null;
+  private squadArrivalEl: HTMLElement | null = null;
+  private wingmanRowEls = new Map<string, { row: HTMLElement; status: HTMLElement; fill: HTMLElement }>();
+  private distressMarkerEls = new Map<string, HTMLElement>();
   private popupContainer: HTMLElement | null = null;
   private hitConfirmTimer = 0;
   private activeCutsceneDone: (() => void) | null = null;
@@ -329,8 +337,14 @@ export class HUD {
   }
 
   private bindArcadeButtonJuice(): void {
-    this.root.querySelectorAll('button').forEach((btn) => {
-      btn.addEventListener('mouseenter', () => this.cb.onUiHover());
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+    buttons.forEach((btn, idx) => {
+      btn.addEventListener('mouseenter', () => {
+        buttons.forEach((b) => b.classList.remove('gamepad-focus'));
+        btn.classList.add('gamepad-focus');
+        this.focusedButtonIdx = idx;
+        this.cb.onUiHover();
+      });
       btn.addEventListener('click', () => this.cb.onUiConfirm());
     });
   }
@@ -787,7 +801,7 @@ export class HUD {
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="game-logo" style="font-size:2.6rem;margin-bottom:4px;">SELECT SECTOR</div>
-        <div class="game-tagline" style="margin-bottom:8px;">DROP ANY .YAML INTO src/levels/data/ TO REGISTER</div>
+        <div class="game-tagline" style="margin-bottom:8px;">CHOOSE YOUR DEPLOYMENT CORRIDOR</div>
         <div class="level-grid">${cards}</div>
         <button id="btn-back" class="neon-btn secondary">BACK TO BRIDGE</button>
       </div>
@@ -800,6 +814,8 @@ export class HUD {
       });
     });
     document.getElementById('btn-back')?.addEventListener('click', () => this.cb.onBackToTitle());
+    this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   private mountPlayingHud(state: GameState, level: LevelConfig): void {
@@ -808,7 +824,19 @@ export class HUD {
         <div class="damage-flash" id="damage-flash"></div>
         <div class="screen-flash" id="screen-flash"></div>
         <div class="energy-vignette" id="energy-vignette"></div>
+        <div class="cinema-bar top" id="cinema-bar-top"></div>
+        <div class="cinema-bar bottom" id="cinema-bar-bot"></div>
+        <div class="squad-arrival-card" id="squad-arrival-card">
+          <img class="squad-arrival-portrait blitz" src="/assets/art/portrait-blitz.jpg" alt="BLITZ" />
+          <div class="squad-arrival-center">
+            <div class="squad-arrival-kicker">REINFORCEMENTS ARRIVED!</div>
+            <div class="squad-arrival-title">BLITZ &amp; TANK</div>
+            <div class="squad-arrival-sub">ALLIED WINGMEN JOIN THE FIGHT • WATCH THEIR SIX!</div>
+          </div>
+          <img class="squad-arrival-portrait tank" src="/assets/art/portrait-tank.jpg" alt="TANK" />
+        </div>
         <div class="arcade-stamp-layer" id="arcade-stamp-layer"></div>
+        <div id="distress-layer"></div>
         <div id="popup-container"></div>
 
         <div class="hud-top-left">
@@ -820,6 +848,7 @@ export class HUD {
             <div class="hud-bar-label"><span>BOOST / BRAKE</span><span>F / C</span></div>
             <div class="hud-bar-track"><div class="hud-bar-fill boost" id="hud-boost-fill" style="width:100%"></div></div>
           </div>
+          <div class="wingman-hud-wrap" id="wingman-hud-wrap"></div>
         </div>
 
         <div class="hud-top-center">
@@ -898,6 +927,13 @@ export class HUD {
     this.screenFlashEl = document.getElementById('screen-flash');
     this.stampLayerEl = document.getElementById('arcade-stamp-layer');
     this.energyVignetteEl = document.getElementById('energy-vignette');
+    this.wingmanWrapEl = document.getElementById('wingman-hud-wrap');
+    this.distressLayerEl = document.getElementById('distress-layer');
+    this.wingmanRowEls.clear();
+    this.distressMarkerEls.clear();
+    this.cinemaTopEl = document.getElementById('cinema-bar-top');
+    this.cinemaBotEl = document.getElementById('cinema-bar-bot');
+    this.squadArrivalEl = document.getElementById('squad-arrival-card');
     this.popupContainer = document.getElementById('popup-container');
     this.mousePill = document.getElementById('pill-mouse');
     this.mutePill = document.getElementById('pill-mute');
@@ -1092,6 +1128,79 @@ export class HUD {
     this.bannerTimer = duration;
   }
 
+  public showSquadronArrival(active: boolean): void {
+    this.cinemaTopEl?.classList.toggle('active', active);
+    this.cinemaBotEl?.classList.toggle('active', active);
+    this.squadArrivalEl?.classList.toggle('visible', active);
+  }
+
+  public updateWingmanHud(
+    deployed: boolean,
+    allies: WingmanHudEntry[],
+    distressScreenPoints: Array<{ callsign: string; x: number; y: number; inFront: boolean }>
+  ): void {
+    if (this.wingmanWrapEl) {
+      const show = deployed && allies.length > 0;
+      this.wingmanWrapEl.classList.toggle('visible', show);
+      if (show) {
+        if (this.wingmanRowEls.size === 0) {
+          this.wingmanWrapEl.innerHTML = '<div class="wingman-hud-title">SQUADRON WINGMEN</div>';
+          for (const a of allies) {
+            const row = document.createElement('div');
+            row.className = 'wingman-row';
+            row.innerHTML = `
+              <div class="wingman-row-head"><span>${a.callsign}</span><span class="wingman-status">100%</span></div>
+              <div class="wingman-bar-track"><div class="wingman-bar-fill"></div></div>
+            `;
+            this.wingmanWrapEl.appendChild(row);
+            const status = row.querySelector('.wingman-status') as HTMLElement;
+            const fill = row.querySelector('.wingman-bar-fill') as HTMLElement;
+            this.wingmanRowEls.set(a.id, { row, status, fill });
+          }
+        }
+        for (const a of allies) {
+          const refs = this.wingmanRowEls.get(a.id);
+          if (!refs) continue;
+          refs.row.classList.toggle('ejected', a.ejected);
+          refs.row.classList.toggle('danger', a.underAttack);
+          refs.status.textContent = a.ejected ? 'EJECTED' : a.underAttack ? 'HELP!' : `${a.hpPct}%`;
+          const barColor = a.underAttack ? '#ff5522' : a.accentColor;
+          refs.fill.style.width = `${a.ejected ? 0 : a.hpPct}%`;
+          refs.fill.style.background = barColor;
+          refs.fill.style.boxShadow = `0 0 8px ${barColor}`;
+        }
+      } else if (this.wingmanRowEls.size > 0) {
+        this.wingmanWrapEl.innerHTML = '';
+        this.wingmanRowEls.clear();
+      }
+    }
+
+    if (this.distressLayerEl) {
+      const visible = distressScreenPoints.filter(
+        (p) => p.inFront && p.x > 20 && p.x < window.innerWidth - 20 && p.y > 20 && p.y < window.innerHeight - 20
+      );
+      const activeKeys = new Set(visible.map((p) => p.callsign));
+      for (const [key, el] of this.distressMarkerEls.entries()) {
+        if (!activeKeys.has(key)) {
+          el.remove();
+          this.distressMarkerEls.delete(key);
+        }
+      }
+      for (const p of visible) {
+        let marker = this.distressMarkerEls.get(p.callsign);
+        if (!marker) {
+          marker = document.createElement('div');
+          marker.className = 'distress-marker';
+          marker.innerHTML = `<div class="distress-box"></div><div class="distress-tag">HELP ${p.callsign}!</div>`;
+          this.distressLayerEl.appendChild(marker);
+          this.distressMarkerEls.set(p.callsign, marker);
+        }
+        marker.style.left = `${p.x.toFixed(0)}px`;
+        marker.style.top = `${p.y.toFixed(0)}px`;
+      }
+    }
+  }
+
   public showComms(speaker: CommsSpeaker, message: string, duration = 3.8): void {
     if (!this.commsBox || !this.commsImg || !this.commsSpeakerEl || !this.commsMsgEl) return;
 
@@ -1101,6 +1210,8 @@ export class HUD {
       boss: { label: 'WARLORD CORE // BOOT N ASS', img: '/assets/art/portrait-boss.jpg', isBoss: true },
       grunt: { label: 'ALIEN GRUNT // PANICKING', img: '/assets/art/portrait-grunt.jpg', isBoss: true },
       mechanic: { label: 'ZORP // WEAPONS MECHANIC', img: '/assets/art/portrait-shop.jpg', isBoss: false },
+      blitz: { label: 'BLITZ // LEFT WING STRIKER', img: '/assets/art/portrait-blitz.jpg', isBoss: false },
+      tank: { label: 'TANK // RIGHT WING GUNSHIP', img: '/assets/art/portrait-tank.jpg', isBoss: false },
     };
 
     const m = meta[speaker];
@@ -1227,6 +1338,8 @@ export class HUD {
     document.getElementById('btn-retry-boss')?.addEventListener('click', () => this.cb.onRetryBoss());
     document.getElementById('btn-retry')?.addEventListener('click', () => this.cb.onRetryLevel());
     document.getElementById('btn-menu')?.addEventListener('click', () => this.cb.onBackToTitle());
+    this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   private renderLeaderboardTableHtml(): string {
@@ -1271,6 +1384,7 @@ export class HUD {
     `;
     document.getElementById('btn-lb-back')?.addEventListener('click', () => this.renderTitle(state));
     this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   private renderVictory(state: GameState): void {
@@ -1342,6 +1456,7 @@ export class HUD {
       this.cb.onBackToTitle();
     });
     this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   private escapeHtml(str: string): string {

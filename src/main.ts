@@ -19,6 +19,7 @@ import { ProjectilePool, type HomingTarget } from './entities/ProjectilePool';
 import { EnemyFactory } from './entities/EnemyFactory';
 import { ObstacleFactory } from './entities/ObstacleFactory';
 import { BossController } from './entities/BossController';
+import { WingmanSquadron, type WingmanCallbacks } from './entities/WingmanSquadron';
 import { loadAllLevels, LevelTimelineDriver } from './levels/LevelLoader';
 import { EnvironmentRig } from './levels/EnvironmentRig';
 import { TrackCurve } from './levels/TrackCurve';
@@ -146,6 +147,39 @@ const BANTER: Record<string, BanterLine[]> = {
     { voId: 'nova-bomb-1', speaker: 'wingman', text: "Nova bomb away! Say goodnight, space clowns!" },
     { voId: 'nova-bomb-2', speaker: 'commander', text: "Clearing the whole dang screen! Taste pure neon sunshine, losers!" },
   ],
+  squadS3Start: [
+    { voId: 'squad-s3-start', speaker: 'tank', text: "Full squadron locked in for the final spire! Stay on our wings, keep the bogeys off our tails, and let's end this!" },
+  ],
+  blitzHelp: [
+    { voId: 'blitz-help-1', speaker: 'blitz', text: "Uh, little help here?! Got a crazy alien glued to my tailpipe—blast him off me!" },
+    { voId: 'blitz-help-2', speaker: 'blitz', text: "Whoa! Bogey on my six! My shields are sizzling—shoot this guy before I'm toast!" },
+  ],
+  tankHelp: [
+    { voId: 'tank-help-1', speaker: 'tank', text: "Hey hotshot, I got a pest chewing my rear armor! Peel this scrap heap off my tail!" },
+    { voId: 'tank-help-2', speaker: 'tank', text: "Taking heavy fire on the right flank! Clear this bogey off me or I'm losing an engine!" },
+  ],
+  blitzSaved: [
+    { voId: 'blitz-saved-1', speaker: 'blitz', text: "Wooo! Thanks legend! Owe you a triple space burrito after this sector!" },
+    { voId: 'blitz-saved-2', speaker: 'blitz', text: "Clean shot! Thought my wingtip was a goner—back in formation!" },
+  ],
+  tankSaved: [
+    { voId: 'tank-saved-1', speaker: 'tank', text: "Ha! Nice shooting, kid! Sending a little shield juice your way!" },
+    { voId: 'tank-saved-2', speaker: 'tank', text: "Scratch one bogey! Now that's how a real wingman flies—much obliged!" },
+  ],
+  blitzKill: [
+    { voId: 'blitz-kill-1', speaker: 'blitz', text: "Booyah! Blitz just vaporized one! Try to keep up, ace!" },
+    { voId: 'blitz-kill-2', speaker: 'blitz', text: "Left lane cleared! Leaving the big ugly ones for you!" },
+  ],
+  tankKill: [
+    { voId: 'tank-kill-1', speaker: 'tank', text: "Heavy cannons speaking! That scrap bucket just met its maker!" },
+    { voId: 'tank-kill-2', speaker: 'tank', text: "Boom! Tank clears the corridor—keep pushing forward!" },
+  ],
+  blitzEject: [
+    { voId: 'blitz-eject', speaker: 'blitz', text: "Engines fried! Ejecting! Don't worry, my escape pod has snacks—finish 'em for me!" },
+  ],
+  tankEject: [
+    { voId: 'tank-eject', speaker: 'tank', text: "Hull breached! Bailing out! My ship's cooked—put extra boot in their ass for me, kid!" },
+  ],
 };
 
 class BootNAssGame {
@@ -161,6 +195,7 @@ class BootNAssGame {
   private readonly enemies: EnemyFactory;
   private readonly obstacles: ObstacleFactory;
   private readonly boss: BossController;
+  private readonly squadron: WingmanSquadron;
   private readonly env: EnvironmentRig;
   private readonly trackCurve = new TrackCurve();
   private readonly hud: HUD;
@@ -171,6 +206,16 @@ class BootNAssGame {
 
   // Boss checkpoint tracking — if you lose at the boss, retry starts right at the boss!
   private bossCheckpointDist: number | null = null;
+  private skipNextBossCutscene = false;
+
+  // Wingman squadron cutscene & banter pacing
+  private arrivalBlitzSpoke = false;
+  private arrivalTankSpoke = false;
+  private allyHelpCooldown = 0;
+
+  // Sector 1 gimmick: Turbo Gate Streak chains!
+  private turboStreakCount = 0;
+  private turboStreakTimer = 0;
 
   // True Fisher-Yates shuffle bags (ZERO repeats until every line in a category has played!)
   private shuffleBags = new Map<string, number[]>();
@@ -232,6 +277,7 @@ class BootNAssGame {
     this.enemies = new EnemyFactory(this.renderer.scene);
     this.obstacles = new ObstacleFactory(this.renderer.scene);
     this.boss = new BossController(this.renderer.scene);
+    this.squadron = new WingmanSquadron(this.renderer.scene);
     this.env = new EnvironmentRig(this.renderer.scene);
 
     this.hud = new HUD(uiRoot, {
@@ -301,8 +347,15 @@ class BootNAssGame {
         this.startLevel(this.state.currentLevelIndex, 0);
       },
       onRetryBoss: () => {
-        const dist = this.bossCheckpointDist ?? 0;
-        this.startLevel(this.state.currentLevelIndex, Math.max(0, dist - 140));
+        const level = this.levels[this.state.currentLevelIndex];
+        const bossEv = level?.timeline.find((e) => e.type === 'boss');
+        const targetDist = this.bossCheckpointDist ?? bossEv?.atDistance ?? 0;
+        if (targetDist > 0) {
+          this.bossCheckpointDist = targetDist;
+          this.startLevel(this.state.currentLevelIndex, Math.max(0, targetDist - 20), true);
+        } else {
+          this.startLevel(this.state.currentLevelIndex, 0, false);
+        }
       },
       onResume: () => {
         if (this.state.phase === 'Paused') {
@@ -474,11 +527,14 @@ class BootNAssGame {
     }
     if (!chosen) return;
 
-    // Single-channel priority: Boss (3) > Wingman/Commander (2) > System/Grunt (1)
+    // Single-channel priority: Boss (3) > Wingman/Commander/Squadron (2) > System/Grunt (1)
     const voicePriority: VoicePriority =
       chosen.speaker === 'boss'
         ? 3
-        : chosen.speaker === 'wingman' || chosen.speaker === 'commander'
+        : chosen.speaker === 'wingman' ||
+            chosen.speaker === 'commander' ||
+            chosen.speaker === 'blitz' ||
+            chosen.speaker === 'tank'
           ? 2
           : 1;
 
@@ -577,7 +633,7 @@ class BootNAssGame {
     this.hud.renderPhase('Title', this.state, this.levels);
   }
 
-  private startLevel(index: number, startDist: number): void {
+  private startLevel(index: number, startDist: number, isBossRetry = false): void {
     const level = this.levels[index];
     if (!level) return;
 
@@ -585,11 +641,15 @@ class BootNAssGame {
     this.state.currentLevelIndex = index;
     this.state.resetLevelStats(this.meta.maxShield);
     this.state.phase = 'Playing';
+    this.skipNextBossCutscene = isBossRetry;
+    if (!isBossRetry && startDist === 0) {
+      this.bossCheckpointDist = null;
+    }
     this.lowShieldWarned = false;
     this.bossClearDelay = 0;
     this.bossVictoryElapsed = 0;
     this.playerDying = false;
-    this.warpEntryTimer = 1.15;
+    this.warpEntryTimer = isBossRetry ? 0.65 : 1.15;
     this.multiKillCount = 0;
     this.multiKillWindow = 0;
     this.criticalBeepTimer = 0;
@@ -597,8 +657,13 @@ class BootNAssGame {
     this.hitstopTimer = 0;
     this.screenShake = 0;
     this.turboBoostTimer = 0;
+    this.turboStreakCount = 0;
+    this.turboStreakTimer = 0;
+    this.arrivalBlitzSpoke = false;
+    this.arrivalTankSpoke = false;
+    this.allyHelpCooldown = 0;
     this.casualBanterCooldown = 4.0;
-    this.ambientHazardTimer = 1.6;
+    this.ambientHazardTimer = isBossRetry ? 99 : 1.6;
     this.ambientCycle = 0;
     this.bossSupplyTimer = 8.5;
     this.bossSupplyCycle = 0;
@@ -637,11 +702,19 @@ class BootNAssGame {
     this.timeline = new LevelTimelineDriver(level, startDist);
     this.hud.setBossCheckpoint(this.bossCheckpointDist !== null);
 
+    // If retrying Boss 2 or Boss 3 (or jumping past the ally arrival point), deploy Blitz & Tank with you!
+    if (
+      (isBossRetry && index >= 1) ||
+      (startDist > 0 && level.timeline.some((e) => e.type === 'allies_arrive' && e.atDistance < startDist))
+    ) {
+      this.squadron.deploy(false);
+    }
+
     this.hud.renderPhase('Playing', this.state, this.levels);
     this.hud.setCriticalHull(false, false);
-    this.player.setEntryZOffset(11);
+    this.player.setEntryZOffset(isBossRetry ? 8 : 11);
     this.audio.playWarpEntry();
-    if (startDist > 0 && this.bossCheckpointDist !== null) {
+    if (isBossRetry || (startDist > 0 && this.bossCheckpointDist !== null)) {
       this.hud.showBanner('BOSS CHECKPOINT // ROUND TWO!', 2.4);
       this.hud.showArcadeStamp('ROUND TWO // ENGAGE!', 'warp');
       this.audio.playMusicTrack('boss-battle', true, 0.44, 0.78);
@@ -662,7 +735,42 @@ class BootNAssGame {
     this.projectiles.clear();
     this.particles.clear();
     this.boss.clear();
+    this.squadron.clear();
+    this.hud.showSquadronArrival(false);
     this.lockedTargets = [];
+  }
+
+  private getWingmanCallbacks(): WingmanCallbacks {
+    return {
+      onNeedHelp: (allyId, callsign) => {
+        if (this.allyHelpCooldown <= 0) {
+          this.allyHelpCooldown = 14.0;
+          this.hud.showBanner(`BOGEY ON ${callsign}'S TAIL // SHOOT IT DOWN!`, 2.2);
+          this.playCategoryBanter(allyId === 'blitz' ? 'blitzHelp' : 'tankHelp', 3.6, true);
+        }
+      },
+      onSaved: (allyId, callsign, pos) => {
+        const pts = this.state.addBonusScore(600);
+        this.player.heal(10);
+        this.audio.playRingPickup();
+        this.input.rumble(0.3, 0.4, 110);
+        this.particles.spawnShockwave(pos, allyId === 'blitz' ? 0x00ff88 : 0xffd447, 11, 0.4);
+        const sp = this.projectToScreen(pos);
+        this.hud.spawnFloatingText(sp.x, sp.y, `SAVED ${callsign}! +${pts}`, allyId === 'blitz' ? '#00ff88' : '#ffd447');
+        this.hud.showArcadeStamp(`SAVED ${callsign}! +10 SHIELD`, 'clear');
+        this.playCategoryBanter(allyId === 'blitz' ? 'blitzSaved' : 'tankSaved', 3.5, false, 1.0);
+      },
+      onEjected: (allyId, callsign, pos) => {
+        this.audio.playExplosion(false);
+        this.particles.burst(pos, 26, 0xff5500, 22, 1.15, 0.62);
+        this.particles.spawnShockwave(pos, 0xff4422, 11, 0.42);
+        this.hud.showBanner(`${callsign} EJECTED // HOLD THE LINE!`, 2.6);
+        this.playCategoryBanter(allyId === 'blitz' ? 'blitzEject' : 'tankEject', 4.0, true);
+      },
+      onSpark: (pos, colorHex) => {
+        this.particles.burst(pos, 4, colorHex, 9, 0.45, 0.22);
+      },
+    };
   }
 
   private triggerNovaBomb(): void {
@@ -688,12 +796,14 @@ class BootNAssGame {
     }
 
     // Blast all active enemies on screen!
+    const wingCb = this.getWingmanCallbacks();
     for (const e of this.enemies.enemies) {
       if (e.alive && e.mesh.position.z > -150) {
         const killed = this.enemies.damageEnemy(e, 140);
         if (killed) {
           this.state.registerKill(e.scoreValue);
           this.registerMultiKill();
+          this.squadron.notifyPlayerKilledEnemy(e, wingCb);
           this.particles.burst(e.mesh.position, 22, 0xffd447, 24, 1.2, 0.65);
         }
       }
@@ -740,6 +850,7 @@ class BootNAssGame {
     this.input.rumble(0.95, 0.9, 500);
     this.screenShake = 1.5;
     this.hud.setCriticalHull(true, true);
+    this.hud.updateWingmanHud(false, [], []);
     this.hud.showBanner('MAYDAY! MAYDAY! HULL INTEGRITY ZERO!', 2.5);
     this.hud.showArcadeStamp('MAYDAY // HULL BREACH!', 'death');
     this.playDramaticBanter('pilotDeath', 3.6);
@@ -753,6 +864,7 @@ class BootNAssGame {
     this.input.rumble(1.0, 0.9, 450);
     this.hud.triggerScreenFlash('gold');
     this.hud.setCriticalHull(false, false);
+    this.hud.updateWingmanHud(false, [], []);
 
     // Vaporize all remaining enemy shots & escorts into golden sparkles (zero post-mortem cheap hits!)
     for (const p of this.projectiles.projectiles) {
@@ -886,7 +998,7 @@ class BootNAssGame {
       return;
     }
 
-    if (input.pausePressed && !this.playerDying && this.bossClearDelay <= 0) {
+    if (input.pausePressed && !this.playerDying && this.bossClearDelay <= 0 && !this.squadron.arrivalActive) {
       this.state.phase = 'Paused';
       this.hud.renderPhase('Paused', this.state, this.levels);
       return;
@@ -897,7 +1009,12 @@ class BootNAssGame {
       return;
     }
     if (this.casualBanterCooldown > 0) this.casualBanterCooldown -= dt;
+    if (this.allyHelpCooldown > 0) this.allyHelpCooldown -= dt;
     if (this.turboBoostTimer > 0) this.turboBoostTimer -= dt;
+    if (this.turboStreakTimer > 0) {
+      this.turboStreakTimer -= dt;
+      if (this.turboStreakTimer <= 0) this.turboStreakCount = 0;
+    }
     if (this.multiKillWindow > 0) {
       this.multiKillWindow -= dt;
       if (this.multiKillWindow <= 0) this.multiKillCount = 0;
@@ -1089,6 +1206,100 @@ class BootNAssGame {
       return;
     }
 
+    // === REAL-TIME IN-GAME SQUADRON ARRIVAL CUTSCENE (Sector 2 Midpoint — 5.2s!) ===
+    if (this.squadron.arrivalActive) {
+      const slowSpeed = level.baseSpeed * 0.56;
+      const distNow = this.timeline ? this.timeline.distance : 0;
+      this.trackCurve.update(dt, distNow, this.state.currentLevelIndex, false);
+      this.env.update(dt, slowSpeed, true, this.trackCurve);
+
+      // Smooth cinematic player auto-glide safely in center-low
+      this.player.root.position.x = THREE.MathUtils.lerp(this.player.root.position.x, 0, Math.min(1, dt * 4));
+      this.player.root.position.y = THREE.MathUtils.lerp(this.player.root.position.y, -0.7, Math.min(1, dt * 4));
+      this.player.root.rotation.z = THREE.MathUtils.lerp(this.player.root.rotation.z, Math.sin(this.squadron.arrivalElapsed * 2.2) * 0.14, Math.min(1, dt * 5));
+      this.player.setEntryZOffset(0);
+
+      // Timed Blitz & Tank arrival dialogue over the live 3D fly-past!
+      if (!this.arrivalBlitzSpoke && this.squadron.arrivalElapsed >= 0.35) {
+        this.arrivalBlitzSpoke = true;
+        this.audio.stopVO();
+        this.hud.showComms(
+          'blitz',
+          "Yo! Sorry we bailed earlier—turns out those tin cans blew up our favorite space taco stand! Blitz on your left wing!",
+          2.6
+        );
+        void this.audio.playVO('blitz-arrive', false, true);
+      }
+      if (!this.arrivalTankSpoke && this.squadron.arrivalElapsed >= 2.8) {
+        this.arrivalTankSpoke = true;
+        this.audio.stopVO();
+        this.hud.showComms(
+          'tank',
+          "Tank locked and loaded on your right! Nobody wrecks Taco Nebula and gets away with it—let's put boot in ass!",
+          2.7
+        );
+        void this.audio.playVO('tank-arrive', false, true);
+      }
+
+      const arrivalDone = this.squadron.updateArrivalCinematic(
+        dt,
+        this.enemies,
+        this.projectiles,
+        (boomPos, colorHex) => {
+          this.audio.playWarpEntry();
+          this.input.rumble(0.45, 0.45, 130);
+          this.screenShake = Math.max(this.screenShake, 0.45);
+          this.particles.spawnShockwave(boomPos, colorHex, 16, 0.48);
+          this.particles.burst(boomPos, 18, colorHex, 20, 0.9, 0.45);
+        }
+      );
+
+      this.projectiles.update(dt);
+      this.particles.update(dt, slowSpeed);
+      this.audio.updateMusic(dt);
+
+      // Heroic wide dynamic showcase camera watching Blitz & Tank streak past!
+      const cam = this.renderer.camera;
+      const p = Math.min(1, this.squadron.arrivalElapsed / this.squadron.arrivalDuration);
+      const targetCamX = Math.sin(p * Math.PI) * 2.6;
+      const targetCamY = 1.6 + Math.sin(p * Math.PI * 2) * 0.45;
+      cam.position.x += (targetCamX - cam.position.x) * Math.min(1, dt * 4.5);
+      cam.position.y += (targetCamY - cam.position.y) * Math.min(1, dt * 4.5);
+      cam.position.z = THREE.MathUtils.lerp(cam.position.z, 15.8, dt * 3);
+      if (this.screenShake > 0) {
+        this.screenShake = Math.max(0, this.screenShake - dt * 2.4);
+        const s = this.screenShake * 0.6;
+        cam.position.x += (Math.random() - 0.5) * s;
+        cam.position.y += (Math.random() - 0.5) * s;
+      }
+      cam.fov += (72 - cam.fov) * Math.min(1, dt * 4);
+      cam.updateProjectionMatrix();
+      cam.lookAt(0, 0.2, -26);
+
+      this.hud.updatePlayingHud(
+        dt,
+        this.state,
+        (this.player.shield / this.player.maxShield) * 100,
+        this.player.boostMeter,
+        this.timeline ? this.timeline.progress : 0,
+        { active: false, name: '', phase: 1, hpPct: 0 },
+        { nearX: -999, nearY: -999, farX: -999, farY: -999, charging: false, lockPoints: [] },
+        {
+          weaponMode: this.player.weaponMode,
+          weaponTimer: this.player.weaponTimer,
+          novaBombs: this.player.novaBombs,
+          gamepadConnected: input.gamepadConnected,
+        }
+      );
+
+      if (arrivalDone) {
+        this.hud.showSquadronArrival(false);
+        this.hud.showBanner('SQUADRON FORMED // PROTECT BLITZ & TANK!', 2.6);
+        this.hud.showArcadeStamp('WINGMEN ONLINE!', 'warp');
+      }
+      return;
+    }
+
     // Hyper-Warp Sector Entry Zoom-In (first 1.15s of sector!)
     if (this.warpEntryTimer > 0) {
       this.warpEntryTimer = Math.max(0, this.warpEntryTimer - dt);
@@ -1102,12 +1313,16 @@ class BootNAssGame {
       this.player.setEntryZOffset(0);
     }
 
-    const isSuperBoost = this.player.isBoosting || this.turboBoostTimer > 0 || this.warpEntryTimer > 0.25;
-    const speedMult = this.turboBoostTimer > 0 ? 1.52 : this.player.isBoosting ? 1.45 : this.player.isBraking ? 0.65 : 1.08;
-    const railSpeed = level.baseSpeed * speedMult;
-
     const currentDist = this.timeline ? this.timeline.distance : 0;
     this.trackCurve.update(dt, currentDist, this.state.currentLevelIndex, this.boss.active);
+
+    const isSuperBoost =
+      this.player.isBoosting ||
+      this.turboBoostTimer > 0 ||
+      this.warpEntryTimer > 0.25 ||
+      this.trackCurve.stuntSpeedMult > 1.12;
+    const speedMult = this.turboBoostTimer > 0 ? 1.52 : this.player.isBoosting ? 1.45 : this.player.isBraking ? 0.65 : 1.08;
+    const railSpeed = level.baseSpeed * speedMult * this.trackCurve.stuntSpeedMult;
 
     // 1. Update Player (+ Somersault Backflip & Nova Bomb!)
     const { startedBoost, startedRoll, startedSomersault } = this.player.update(
@@ -1238,8 +1453,8 @@ class BootNAssGame {
       this.timeline.advance(dt, railSpeed, (ev) => this.handleTimelineEvent(ev, level));
 
       const lvlIdx = this.state.currentLevelIndex;
-      const interval = lvlIdx === 0 ? 2.75 : lvlIdx === 1 ? 2.2 : 1.75;
-      const maxObstacles = lvlIdx === 0 ? 4 : lvlIdx === 1 ? 5 : 6;
+      const interval = lvlIdx === 0 ? 2.25 : lvlIdx === 1 ? 1.85 : 1.5;
+      const maxObstacles = lvlIdx === 0 ? 5 : lvlIdx === 1 ? 6 : 7;
       this.ambientHazardTimer -= dt;
       if (this.ambientHazardTimer <= 0) {
         this.ambientHazardTimer = interval;
@@ -1312,6 +1527,16 @@ class BootNAssGame {
         this.particles.burst(sparkPos, 6, 0xffaa22, 14, 0.7, 0.35);
       }
     );
+    const wingmanCb = this.getWingmanCallbacks();
+    this.squadron.update(
+      dt,
+      this.player.position,
+      this.enemies,
+      this.projectiles,
+      this.boss,
+      diffCfg.damageTakenMult,
+      wingmanCb
+    );
     this.projectiles.update(dt, (pos) => {
       this.particles.spawnTrail(pos, 0xffd447, 0.42, 0.24);
     });
@@ -1337,6 +1562,7 @@ class BootNAssGame {
           this.state.registerHit();
           const { points, enteredOverdrive } = this.state.registerKill(e.scoreValue);
           this.registerMultiKill();
+          this.squadron.notifyPlayerKilledEnemy(e, wingmanCb);
           this.audio.playExplosion(false);
           this.hud.triggerHitMarker();
           this.input.rumble(0.22, 0.35, 75);
@@ -1358,7 +1584,14 @@ class BootNAssGame {
             this.spawnBossPickupAt(level, 'boost_ring', pos.x, pos.y, pos.z, 30);
           }
         },
-        onCrystalDestroyed: (_obs, pos) => {
+        onAllyEnemyKilled: (_e, pos, allyId) => {
+          // Subtle balanced visual/audio feedback so allied kills feel helpful without cluttering the screen!
+          this.state.addBonusScore(50);
+          this.particles.burst(pos, 12, allyId === 'blitz' ? 0x00ff88 : 0xffd447, 16, 0.85, 0.44);
+          this.particles.burst(pos, 8, 0xff6622, 14, 0.75, 0.38);
+          this.playCategoryBanter(allyId === 'blitz' ? 'blitzKill' : 'tankKill', 2.9, false, 0.16);
+        },
+        onCrystalDestroyed: (obs, pos) => {
           this.state.registerHit();
           const pts = this.state.addBonusScore(250);
           this.audio.playExplosion(false);
@@ -1366,7 +1599,14 @@ class BootNAssGame {
           this.particles.burst(pos, 26, 0x00ffd5, 25, 1.25, 0.72);
           this.particles.spawnShockwave(pos, 0x00ffd5, 7.5, 0.34);
           const sp = this.projectToScreen(pos);
-          this.hud.spawnFloatingText(sp.x, sp.y, `SHATTER +${pts}`, '#00ffd5');
+          // Sector 2 Gimmick: Prism Shield Shards restore hull & wingman shields!
+          if (level.id === 'prism-belt' && obs.kind === 'crystal_cluster') {
+            this.player.heal(5);
+            this.squadron.healSquad(6);
+            this.hud.spawnFloatingText(sp.x, sp.y, `SHIELD SHARD +5 // +${pts}`, '#00ffd5');
+          } else {
+            this.hud.spawnFloatingText(sp.x, sp.y, `SHATTER +${pts}`, '#00ffd5');
+          }
           this.screenShake = Math.max(this.screenShake, 0.26);
         },
         onBossPartHit: (_part, pos, phaseBreak, bossDefeated, partDestroyed, blocked, shatteredShield) => {
@@ -1501,6 +1741,7 @@ class BootNAssGame {
           this.state.stats.ringsCollected += 1;
           const healAmt = this.state.difficultyConfig.ringHealAmount;
           this.player.heal(healAmt);
+          this.squadron.healSquad(12);
           this.lowShieldWarned = this.player.shield <= 30;
           const pts = this.state.addBonusScore(300);
           this.audio.playRingPickup();
@@ -1512,17 +1753,35 @@ class BootNAssGame {
         },
         onSlalomGate: (obs) => {
           this.state.stats.turboGatesHit += 1;
-          this.turboBoostTimer = 1.5;
-          this.player.heal(Math.max(3, Math.round(this.state.difficultyConfig.ringHealAmount * 0.5)));
-          const pts = this.state.addBonusScore(500);
+          this.turboStreakCount += 1;
+          this.turboStreakTimer = 9.0;
+          const streakMult = Math.min(5, this.turboStreakCount);
+          this.turboBoostTimer = Math.min(3.0, 1.5 + streakMult * 0.3);
+          this.player.heal(Math.max(4, Math.round(this.state.difficultyConfig.ringHealAmount * 0.5)));
+          const pts = this.state.addBonusScore(500 * streakMult);
           this.audio.playBoost();
           this.audio.playRingPickup();
-          this.input.rumble(0.3, 0.4, 120);
+          this.input.rumble(0.35, 0.45, 130);
           this.particles.burst(obs.mesh.position, 22, 0x00ff88, 22, 1.0, 0.55);
           this.particles.spawnShockwave(obs.mesh.position, 0x00ff88, 12, 0.42);
           const sp = this.projectToScreen(obs.mesh.position);
-          this.hud.spawnFloatingText(sp.x, sp.y, `TURBO +${pts}!`, '#00ff88');
-          this.hud.showBanner('TURBO GATE // +500', 1.1);
+
+          // Sector 3 Gimmick: Overclock Warp Gates heal the whole squadron + surge weapons!
+          if (level.id === 'hyper-spire') {
+            this.squadron.healSquad(16);
+            const nextMode = this.player.weaponMode === 'spread' ? 'spread' : 'gatling';
+            this.player.grantWeaponUpgrade(nextMode, Math.max(this.player.weaponTimer + 4.5, 6.5));
+            this.hud.spawnFloatingText(sp.x, sp.y, `OVERCLOCK +${pts}!`, '#ffd447');
+            this.hud.showBanner('OVERCLOCK WARP // SQUAD HEALED + WEAPONS SURGED!', 1.5);
+          } else {
+            this.squadron.healSquad(8);
+            const label = streakMult >= 2 ? `TURBO CHAIN x${streakMult}! +${pts}` : `TURBO +${pts}!`;
+            this.hud.spawnFloatingText(sp.x, sp.y, label, '#00ff88');
+            this.hud.showBanner(
+              streakMult >= 2 ? `TURBO GATE STREAK x${streakMult} // +${pts}` : `TURBO GATE // +${pts}`,
+              1.2
+            );
+          }
         },
         onWeaponCrate: (obs) => {
           this.audio.playPowerup();
@@ -1569,18 +1828,19 @@ class BootNAssGame {
     }
 
     const targetFov =
-      this.warpEntryTimer > 0.25 ? 88 : isSuperBoost ? 78 : this.player.isBraking ? 55 : 65;
+      (this.warpEntryTimer > 0.25 ? 88 : isSuperBoost ? 78 : this.player.isBraking ? 55 : 65) +
+      this.trackCurve.stuntFovBonus;
     cam.fov += (targetFov - cam.fov) * Math.min(1, dt * 6);
     cam.updateProjectionMatrix();
 
     cam.lookAt(
       this.player.position.x * 0.3 + this.trackCurve.curveX * 0.32,
-      this.player.position.y * 0.25 + this.trackCurve.curveY * 0.22,
+      this.player.position.y * 0.25 + this.trackCurve.curveY * 0.22 + this.trackCurve.cameraPitchOffset * 28,
       -45
     );
-    cam.rotation.z += this.trackCurve.bankRoll * 0.85;
+    cam.rotation.z += this.trackCurve.bankRoll;
 
-    // 9. Project Reticle & Lock-On Brackets
+    // 9. Project Reticle, Lock-On Brackets & Wingman Distress Markers
     const { near, far } = this.player.getReticleWorldPoints();
     const nearScreen = this.projectToScreen(near);
     const farScreen = this.projectToScreen(far);
@@ -1588,6 +1848,18 @@ class BootNAssGame {
     const lockPoints = this.lockedTargets
       .filter((t) => t.alive)
       .map((t) => this.projectToScreen(t.getPosition(tmpPos)));
+
+    const wingHud = this.squadron.getHudState();
+    const distressPoints = wingHud.distressTargets.map((t) => {
+      const p = t.worldPos.clone().project(cam);
+      return {
+        callsign: t.callsign,
+        x: (p.x * 0.5 + 0.5) * window.innerWidth,
+        y: (-p.y * 0.5 + 0.5) * window.innerHeight,
+        inFront: p.z < 1,
+      };
+    });
+    this.hud.updateWingmanHud(wingHud.deployed, wingHud.allies, distressPoints);
 
     this.state.stats.shieldRemaining = this.player.shield;
     this.hud.updatePlayingHud(
@@ -1771,6 +2043,38 @@ class BootNAssGame {
       this.enemies.spawnWave(ev, this.state.difficultyConfig.enemyHpMult);
     } else if (ev.type === 'obstacle') {
       this.obstacles.spawn(ev, level.environment.primaryColor, level.environment.secondaryColor);
+    } else if (ev.type === 'track_stunt') {
+      this.trackCurve.triggerStunt(ev.stunt, ev.duration);
+      this.audio.playWarpEntry();
+      this.input.rumble(0.42, 0.52, 180);
+      const stampMap = {
+        loop: '360° NEON LOOP!',
+        corkscrew: 'GRAVITY CORKSCREW!',
+        dive: 'HYPER-PLUNGE DIVE!',
+        slalom_wave: 'HIGH-G S-CHICANE!',
+      };
+      const stamp = stampMap[ev.stunt];
+      this.hud.showBanner(ev.label ?? stamp, 2.2);
+      this.hud.showArcadeStamp(stamp, 'warp');
+    } else if (ev.type === 'allies_arrive') {
+      this.squadron.deploy(ev.cinematic);
+      if (ev.cinematic) {
+        this.arrivalBlitzSpoke = false;
+        this.arrivalTankSpoke = false;
+        this.hud.showSquadronArrival(true);
+        this.audio.playWarpEntry();
+        this.input.rumble(0.65, 0.55, 240);
+        // Clear immediate enemy plasma so the arrival showcase stays cinematic & fair
+        for (const p of this.projectiles.projectiles) {
+          if (p.active && p.kind === 'enemy_plasma') {
+            p.active = false;
+          }
+        }
+      } else {
+        this.audio.playWarpEntry();
+        this.hud.showBanner('FULL SQUADRON DEPLOYED // BLITZ & TANK ON WING!', 2.8);
+        this.playCategoryBanter('squadS3Start', 4.2, true);
+      }
     } else if (ev.type === 'boss') {
       // Record boss checkpoint so losing at the boss restarts RIGHT HERE!
       this.bossCheckpointDist = ev.atDistance;
@@ -1786,9 +2090,10 @@ class BootNAssGame {
         this.hud.showBanner(`WARNING // ${ev.name} — I'MMA PUT BOOT N ASS!`, 3.2);
         this.playCategoryBanter('bossBootNAss', 4.2, true);
       };
-      if (bossVideo) {
+      if (bossVideo && !this.skipNextBossCutscene) {
         this.playCutsceneThen(bossVideo, launchBossFight);
       } else {
+        this.skipNextBossCutscene = false;
         launchBossFight();
       }
     }

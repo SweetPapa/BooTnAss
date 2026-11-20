@@ -1662,3 +1662,206 @@ button:focus-visible {
 .pause-stack .neon-btn {
   width: 100%;
 }
+
+/* ==================== WINGMAN SQUADRON COMPACT HUD & ARRIVAL CUTSCENE ==================== */
+.wingman-hud-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  background: rgba(5, 14, 30, 0.72);
+  border: 1px solid rgba(0, 255, 136, 0.35);
+  border-radius: 5px;
+  backdrop-filter: blur(4px);
+}
+
+.wingman-hud-wrap.visible {
+  display: flex;
+}
+
+.wingman-hud-title {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.22em;
+  color: rgba(0, 255, 136, 0.85);
+}
+
+.wingman-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wingman-row.ejected {
+  opacity: 0.42;
+}
+
+.wingman-row-head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  color: #e4f8ff;
+}
+
+.wingman-row.danger .wingman-row-head {
+  color: #ffbd44;
+  animation: wing-blink 0.45s linear infinite;
+}
+
+@keyframes wing-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.wingman-bar-track {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.wingman-bar-fill {
+  height: 100%;
+  transition: width 0.12s linear;
+}
+
+/* 3D-Projected Bogey Distress Target Marker ("HELP BLITZ!" / "HELP TANK!") */
+.distress-marker {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.distress-box {
+  width: 44px;
+  height: 44px;
+  border: 2px solid #ffd447;
+  box-shadow: 0 0 18px rgba(255, 190, 40, 0.85), inset 0 0 10px rgba(255, 60, 60, 0.55);
+  transform: rotate(45deg);
+  animation: distress-pulse 0.55s ease-in-out infinite;
+}
+
+.distress-tag {
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(160, 20, 10, 0.88);
+  border: 1px solid #ffd447;
+  color: #fff6c2;
+  white-space: nowrap;
+  text-shadow: 0 0 8px #ff5500;
+}
+
+@keyframes distress-pulse {
+  0%, 100% { transform: rotate(45deg) scale(0.92); }
+  50% { transform: rotate(45deg) scale(1.1); }
+}
+
+/* In-Game Cinematic Letterbox & Squadron Arrival Splash Card */
+.cinema-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 0;
+  background: #020308;
+  z-index: 34;
+  pointer-events: none;
+  transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cinema-bar.top {
+  top: 0;
+  border-bottom: 2px solid rgba(0, 255, 136, 0.55);
+}
+
+.cinema-bar.bottom {
+  bottom: 0;
+  border-top: 2px solid rgba(255, 212, 71, 0.55);
+}
+
+.cinema-bar.active {
+  height: 11vh;
+}
+
+.squad-arrival-card {
+  position: fixed;
+  top: 15vh;
+  left: 50%;
+  transform: translateX(-50%) scale(0.85);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, rgba(4, 24, 20, 0.92), rgba(10, 18, 42, 0.94));
+  border: 2px solid #00ff88;
+  border-radius: 10px;
+  box-shadow: 0 0 42px rgba(0, 255, 136, 0.45), 0 0 28px rgba(255, 212, 71, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 38;
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 0.88, 0.3, 1.15);
+}
+
+.squad-arrival-card.visible {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.squad-arrival-portrait {
+  width: 78px;
+  height: 78px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 2px solid var(--cyan);
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.5);
+}
+
+.squad-arrival-portrait.blitz {
+  border-color: #00ff88;
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.65);
+}
+
+.squad-arrival-portrait.tank {
+  border-color: #ffd447;
+  box-shadow: 0 0 18px rgba(255, 212, 71, 0.65);
+}
+
+.squad-arrival-center {
+  text-align: center;
+}
+
+.squad-arrival-kicker {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.28em;
+  color: #00ff88;
+  margin-bottom: 4px;
+}
+
+.squad-arrival-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2.4vw, 1.65rem);
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: #ffffff;
+  text-shadow: 0 0 18px var(--gold);
+}
+
+.squad-arrival-sub {
+  font-size: 0.84rem;
+  letter-spacing: 0.12em;
+  color: #ffe89e;
+  margin-top: 3px;
+}

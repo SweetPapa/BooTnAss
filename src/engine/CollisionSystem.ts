@@ -8,6 +8,7 @@ import type { BossController, BossPart } from '../entities/BossController';
 export interface CollisionCallbacks {
   onEnemyHit: (enemy: EnemyEntity, pos: THREE.Vector3) => void;
   onEnemyKilled: (enemy: EnemyEntity, pos: THREE.Vector3) => void;
+  onAllyEnemyKilled?: (enemy: EnemyEntity, pos: THREE.Vector3, allyId: 'blitz' | 'tank') => void;
   onCrystalDestroyed: (obs: ObstacleEntity, pos: THREE.Vector3) => void;
   onBossPartHit: (
     part: BossPart,
@@ -88,24 +89,48 @@ export class CollisionSystem {
         continue;
       }
 
-      // Player projectiles vs Enemies
+      // Player / Allied projectiles vs Enemies
+      const isAllyShot = proj.kind === 'ally_bolt';
       let consumed = false;
       for (const e of enemies.enemies) {
         if (!e.alive) continue;
+        // Allies don't shoot down the bogey currently chasing THEM (that's the player's heroic save job!)
+        if (isAllyShot && e.pursuingAlly && e.pursuingAlly === proj.allyId) continue;
         const r = e.radius + proj.radius;
         if (distSqPointToSegment(e.mesh.position, proj.prevPos, proj.pos) <= r * r) {
           proj.active = false;
           consumed = true;
           const killed = enemies.damageEnemy(e, proj.damage);
           if (killed) {
-            cb.onEnemyKilled(e, e.mesh.position.clone());
-          } else {
+            if (isAllyShot) {
+              cb.onAllyEnemyKilled?.(e, e.mesh.position.clone(), proj.allyId ?? 'blitz');
+            } else {
+              cb.onEnemyKilled(e, e.mesh.position.clone());
+            }
+          } else if (!isAllyShot) {
             cb.onEnemyHit(e, proj.pos.clone());
           }
           break;
         }
       }
       if (consumed) continue;
+
+      // Allied bolts don't steal player crystal/boss kills (light boss chip only!)
+      if (isAllyShot) {
+        if (boss.active) {
+          for (const part of boss.parts) {
+            if (!part.alive || part.isReflectShield || part.hp <= 25) continue;
+            part.getPosition(_partPos);
+            const r = part.radius + proj.radius;
+            if (distSqPointToSegment(_partPos, proj.prevPos, proj.pos) <= r * r) {
+              proj.active = false;
+              boss.damagePart(part, Math.min(proj.damage * 0.5, part.hp - 20), false);
+              break;
+            }
+          }
+        }
+        continue;
+      }
 
       // Player projectiles vs Destructible Crystal Clusters, Rogue Asteroids & Debris Fields
       for (const obs of obstacles.obstacles) {

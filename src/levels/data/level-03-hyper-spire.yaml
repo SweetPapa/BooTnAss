@@ -1,8 +1,8 @@
 id: "hyper-spire"
 name: "03 // HYPER-GRID SPIRE"
-subtitle: "Final Conduit Assault"
-baseSpeed: 66
-length: 5400
+subtitle: "Overclock Gates, Full Squadron & Final Conduit"
+baseSpeed: 82
+length: 16400
 
 environment:
   theme: "cyber_spire"
@@ -14,9 +14,15 @@ environment:
   ambientIntensity: 0.48
 
 timeline:
+  # ==================== FULL SQUADRON DEPLOYMENT AT START! ====================
+  - atDistance: 80
+    type: "allies_arrive"
+    cinematic: false
+
+  # ==================== ACT 1: SPIRE ENTRY (ORIGINAL SEQUENCE PRESERVED) ====================
   - atDistance: 140
     type: "banner"
-    text: "HYPER-GRID SPIRE // MAXIMUM VELOCITY"
+    text: "HYPER-GRID SPIRE // OVERCLOCK GATES HEAL SQUAD!"
 
   - atDistance: 280
     type: "obstacle"
@@ -222,11 +228,312 @@ timeline:
     scale: 1.2
     rotationSpeed: 0.0
 
-  - atDistance: 4720
+  # ==================== ACT 2: OVERCLOCK WARP GATES, HYPER-PLUNGE & CONDUIT CORKSCREW ====================
+  - atDistance: 4860
+    type: "banner"
+    text: "OVERCLOCK WARP RUN // HIT GATES TO SURGE SQUAD!"
+
+  - atDistance: 5040
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -4.2, y: 0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 5220
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.2, y: -0.6 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 5380
+    type: "track_stunt"
+    stunt: "dive"
+    duration: 5.0
+    label: "SPIRE HYPER-PLUNGE // MAXIMUM VELOCITY!"
+
+  - atDistance: 5600
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 11
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "swoop_pass"
+    fireRate: 1.45
+
+  - atDistance: 5900
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: -2.0, y: 0 }
+    scale: 1.25
+    rotationSpeed: 1.55
+
+  - atDistance: 6120
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 2.0, y: 0 }
+    scale: 1.25
+    rotationSpeed: -1.55
+
+  - atDistance: 6360
+    type: "wave"
+    enemy: "weaver"
+    formation: "spiral"
+    count: 11
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.45
+
+  - atDistance: 6680
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0.6 }
+    scale: 1.1
+    rotationSpeed: 1.6
+
+  - atDistance: 6900
+    type: "wave"
+    enemy: "turret"
+    formation: "line"
+    count: 6
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "hover_fire"
+    fireRate: 1.5
+
+  - atDistance: 7200
+    type: "track_stunt"
+    stunt: "corkscrew"
+    duration: 5.4
+    label: "360° CONDUIT CORKSCREW // X-TURBINE MAZE!"
+
+  - atDistance: 7480
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0.6 }
+    scale: 1.25
+    rotationSpeed: 1.5
+
+  - atDistance: 7700
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: -0.6 }
+    scale: 1.25
+    rotationSpeed: -1.5
+
+  - atDistance: 7940
+    type: "wave"
+    enemy: "scout"
+    formation: "spiral"
+    count: 12
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.4
+
+  - atDistance: 8260
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 0, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 8500
+    type: "obstacle"
+    kind: "arch_gate"
+    position: { x: -4.5, y: 0 }
+    scale: 1.0
+    rotationSpeed: 0.0
+
+  - atDistance: 8700
+    type: "obstacle"
+    kind: "arch_gate"
+    position: { x: 4.5, y: 0 }
+    scale: 1.0
+    rotationSpeed: 0.0
+
+  - atDistance: 8960
+    type: "track_stunt"
+    stunt: "slalom_wave"
+    duration: 5.4
+    label: "HIGH-G SPIRE CHICANE // OVERCLOCK CHAIN!"
+
+  - atDistance: 9180
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 5.0, y: 0.5 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9420
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 10
+    spawnOffset: { x: 0, y: 1.2 }
+    behavior: "swoop_pass"
+    fireRate: 1.5
+
+  - atDistance: 9660
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -5.0, y: -0.5 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9940
+    type: "obstacle"
+    kind: "debris_field"
+    position: { x: 0, y: 0 }
+    scale: 1.3
+    rotationSpeed: 1.15
+
+  # ==================== ACT 3: FINAL SPIRE LOOP, ARMADA CLASH & LEVIATHAN CORE ====================
+  - atDistance: 10240
+    type: "banner"
+    text: "FINAL CORE CONDUIT // FULL SQUADRON ASSAULT!"
+
+  - atDistance: 10460
+    type: "wave"
+    enemy: "turret"
+    formation: "flanking"
+    count: 6
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "hover_fire"
+    fireRate: 1.55
+
+  - atDistance: 10760
+    type: "track_stunt"
+    stunt: "loop"
+    duration: 5.2
+    label: "360° HYPER-GRID LOOP // ALL ENGINES MAX!"
+
+  - atDistance: 11040
+    type: "wave"
+    enemy: "weaver"
+    formation: "flanking"
+    count: 12
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.5
+
+  - atDistance: 11380
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 0, y: 0 }
+    scale: 1.3
+    rotationSpeed: -1.65
+
+  - atDistance: 11640
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: -9.5, y: 1.0 }
+    scale: 1.45
+    rotationSpeed: 1.3
+    driftX: 7.0
+    driftY: -0.4
+
+  - atDistance: 11840
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: 9.5, y: -1.0 }
+    scale: 1.45
+    rotationSpeed: -1.3
+    driftX: -7.0
+    driftY: 0.4
+
+  - atDistance: 12120
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 12
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "swoop_pass"
+    fireRate: 1.55
+
+  - atDistance: 12460
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0 }
+    scale: 1.15
+    rotationSpeed: 1.6
+
+  - atDistance: 12660
+    type: "track_stunt"
+    stunt: "dive"
+    duration: 4.8
+    label: "FINAL CORE PLUNGE // PUNCH THROUGH!"
+
+  - atDistance: 12960
+    type: "wave"
+    enemy: "scout"
+    formation: "spiral"
+    count: 14
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.45
+
+  - atDistance: 13320
+    type: "obstacle"
+    kind: "monolith_pillar"
+    position: { x: -3.0, y: 0 }
+    scale: 1.25
+    rotationSpeed: 0.0
+
+  - atDistance: 13500
+    type: "obstacle"
+    kind: "monolith_pillar"
+    position: { x: 3.0, y: 0 }
+    scale: 1.25
+    rotationSpeed: 0.0
+
+  - atDistance: 13840
+    type: "track_stunt"
+    stunt: "corkscrew"
+    duration: 5.0
+    label: "360° REACTOR CORKSCREW // LEVIATHAN IMMINENT!"
+
+  - atDistance: 14180
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 10
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "swoop_pass"
+    fireRate: 1.55
+
+  - atDistance: 14560
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0 }
+    scale: 1.3
+    rotationSpeed: 1.6
+
+  - atDistance: 14860
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -3.5, y: 0.6 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 15040
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 0, y: 0.4 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 15200
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 3.5, y: -0.6 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 15420
     type: "banner"
     text: "WARNING // SOLARIS LEVIATHAN ENGAGING"
 
-  - atDistance: 4820
+  - atDistance: 15600
     type: "boss"
     bossId: "solaris_leviathan"
     name: "SOLARIS LEVIATHAN"

@@ -68,19 +68,35 @@ export const BossEventSchema = z.object({
   phases: z.number().int().min(2).max(3),
 });
 
+export const TrackStuntEventSchema = z.object({
+  atDistance: z.number().min(0),
+  type: z.literal('track_stunt'),
+  stunt: z.enum(['loop', 'corkscrew', 'dive', 'slalom_wave']),
+  duration: z.number().min(2).max(12).default(4.8),
+  label: z.string().max(70).optional(),
+});
+
+export const AlliesArriveEventSchema = z.object({
+  atDistance: z.number().min(0),
+  type: z.literal('allies_arrive'),
+  cinematic: z.boolean().default(true),
+});
+
 export const TimelineEventSchema = z.discriminatedUnion('type', [
   BannerEventSchema,
   WaveEventSchema,
   ObstacleEventSchema,
   BossEventSchema,
+  TrackStuntEventSchema,
+  AlliesArriveEventSchema,
 ]);
 
 export const LevelSchema = z.object({
   id: z.string().min(1).regex(/^[a-z0-9-]+$/, 'Must be kebab-case'),
   name: z.string().min(1),
   subtitle: z.string().min(1),
-  baseSpeed: z.number().min(25).max(100),
-  length: z.number().min(800).max(20000),
+  baseSpeed: z.number().min(25).max(120),
+  length: z.number().min(800).max(40000),
   environment: EnvironmentSchema,
   timeline: z.array(TimelineEventSchema).min(1),
 });
@@ -91,6 +107,8 @@ export type TimelineEvent = z.infer<typeof TimelineEventSchema>;
 export type WaveEvent = z.infer<typeof WaveEventSchema>;
 export type ObstacleEvent = z.infer<typeof ObstacleEventSchema>;
 export type BossEvent = z.infer<typeof BossEventSchema>;
+export type TrackStuntEvent = z.infer<typeof TrackStuntEventSchema>;
+export type AlliesArriveEvent = z.infer<typeof AlliesArriveEventSchema>;
 export type EnemyKind = WaveEvent['enemy'];
 export type ObstacleKind = ObstacleEvent['kind'];
 export type BossId = BossEvent['bossId'];

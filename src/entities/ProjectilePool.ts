@@ -6,7 +6,12 @@ export interface HomingTarget {
   getPosition(out: THREE.Vector3): THREE.Vector3;
 }
 
-export type ProjectileKind = 'player_bolt' | 'player_missile' | 'enemy_plasma' | 'reflected_bolt';
+export type ProjectileKind =
+  | 'player_bolt'
+  | 'player_missile'
+  | 'enemy_plasma'
+  | 'reflected_bolt'
+  | 'ally_bolt';
 
 export interface Projectile {
   active: boolean;
@@ -19,6 +24,7 @@ export interface Projectile {
   radius: number;
   target: HomingTarget | null;
   grazed?: boolean;
+  allyId?: 'blitz' | 'tank';
 }
 
 export class ProjectilePool {
@@ -124,6 +130,27 @@ export class ProjectilePool {
     });
   }
 
+  public spawnAllyBolt(
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+    allyId: 'blitz' | 'tank',
+    damage = 11
+  ): void {
+    const speed = 155;
+    this.projectiles.push({
+      active: true,
+      kind: 'ally_bolt',
+      pos: origin.clone(),
+      prevPos: origin.clone(),
+      vel: direction.clone().normalize().multiplyScalar(speed),
+      life: 1.25,
+      damage,
+      radius: 0.65,
+      target: null,
+      allyId,
+    });
+  }
+
   public spawnEnemyPlasma(
     origin: THREE.Vector3,
     velocity: THREE.Vector3,
@@ -150,6 +177,9 @@ export class ProjectilePool {
 
     const cyanColor = new THREE.Color(0x00f0ff).multiplyScalar(2.8);
     const goldColor = new THREE.Color(0xffd447).multiplyScalar(3.0);
+    // Subtle lower-intensity allied bolt tints so wingmen never clutter the screen!
+    const blitzColor = new THREE.Color(0x33ff99).multiplyScalar(1.55);
+    const tankColor = new THREE.Color(0xffcc55).multiplyScalar(1.55);
 
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const proj = this.projectiles[i];
@@ -185,19 +215,24 @@ export class ProjectilePool {
 
       proj.pos.addScaledVector(proj.vel, dt);
 
-      if (proj.kind === 'player_bolt' || proj.kind === 'reflected_bolt') {
+      if (proj.kind === 'player_bolt' || proj.kind === 'reflected_bolt' || proj.kind === 'ally_bolt') {
         if (pIdx < this.maxPlayerBolts) {
           this.dummy.position.copy(proj.pos);
           this.tmpDir.copy(proj.pos).add(proj.vel);
           this.dummy.lookAt(this.tmpDir);
-          const scale = proj.kind === 'reflected_bolt' ? 1.6 : 1.0;
+          const scale = proj.kind === 'reflected_bolt' ? 1.6 : proj.kind === 'ally_bolt' ? 0.78 : 1.0;
           this.dummy.scale.set(scale, scale, scale);
           this.dummy.updateMatrix();
           this.playerMesh.setMatrixAt(pIdx, this.dummy.matrix);
-          this.playerMesh.setColorAt(
-            pIdx,
-            proj.kind === 'reflected_bolt' ? goldColor : cyanColor
-          );
+          const col =
+            proj.kind === 'reflected_bolt'
+              ? goldColor
+              : proj.kind === 'ally_bolt'
+                ? proj.allyId === 'tank'
+                  ? tankColor
+                  : blitzColor
+                : cyanColor;
+          this.playerMesh.setColorAt(pIdx, col);
           pIdx++;
         }
       } else if (proj.kind === 'player_missile') {

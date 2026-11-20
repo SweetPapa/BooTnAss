@@ -1,8 +1,8 @@
 id: "neon-canyon"
 name: "01 // NEON CANYON"
-subtitle: "Outer Rim Trench Run"
-baseSpeed: 52
-length: 4200
+subtitle: "Turbo Chain Trench & 360° Loops"
+baseSpeed: 64
+length: 12800
 
 environment:
   theme: "canyon"
@@ -14,9 +14,10 @@ environment:
   ambientIntensity: 0.42
 
 timeline:
+  # ==================== ACT 1: OUTER RIM ENTRY (ORIGINAL SEQUENCE PRESERVED) ====================
   - atDistance: 120
     type: "banner"
-    text: "SYSTEMS ONLINE // WATCH THE CENTER LANE"
+    text: "SYSTEMS ONLINE // HIT TURBO GATES TO CHAIN SPEED!"
 
   - atDistance: 240
     type: "wave"
@@ -215,11 +216,349 @@ timeline:
     scale: 1.2
     rotationSpeed: 0.0
 
-  - atDistance: 3520
+  # ==================== ACT 2: TURBO GATE CHAINS & FIRST 360° NEON LOOP ====================
+  - atDistance: 3640
+    type: "banner"
+    text: "DEEP CANYON // TURBO GATE CHAIN AHEAD!"
+
+  - atDistance: 3780
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -4.5, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 3940
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.5, y: -0.5 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 4100
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 0, y: 1.5 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 4240
+    type: "track_stunt"
+    stunt: "loop"
+    duration: 5.2
+    label: "360° NEON CANYON LOOP // FULL THROTTLE!"
+
+  - atDistance: 4380
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: -2.0, y: 1.2 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 4520
+    type: "wave"
+    enemy: "scout"
+    formation: "spiral"
+    count: 8
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "swoop_pass"
+    fireRate: 1.0
+
+  - atDistance: 4680
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 2.0, y: -0.8 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 4860
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0.5 }
+    scale: 1.1
+    rotationSpeed: 1.4
+
+  - atDistance: 5020
+    type: "wave"
+    enemy: "weaver"
+    formation: "flanking"
+    count: 8
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.1
+
+  - atDistance: 5220
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: -2.0, y: 0 }
+    scale: 1.1
+    rotationSpeed: 1.15
+
+  - atDistance: 5400
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 2.0, y: 0 }
+    scale: 1.1
+    rotationSpeed: -1.15
+
+  - atDistance: 5580
+    type: "wave"
+    enemy: "turret"
+    formation: "flanking"
+    count: 5
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "hover_fire"
+    fireRate: 1.15
+
+  - atDistance: 5760
+    type: "obstacle"
+    kind: "arch_gate"
+    position: { x: -5.0, y: 0 }
+    scale: 1.05
+    rotationSpeed: 0.0
+
+  - atDistance: 5900
+    type: "track_stunt"
+    stunt: "slalom_wave"
+    duration: 5.5
+    label: "HIGH-G CANYON CHICANE // CHAIN THE GATES!"
+
+  - atDistance: 6040
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 5.0, y: 0.5 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6220
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -5.0, y: -0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6400
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 6
+    spawnOffset: { x: 0, y: 1.2 }
+    behavior: "swoop_pass"
+    fireRate: 1.15
+
+  - atDistance: 6560
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.5, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6760
+    type: "obstacle"
+    kind: "debris_field"
+    position: { x: -2.0, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.9
+
+  - atDistance: 6940
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 2.5, y: -0.5 }
+    scale: 1.45
+    rotationSpeed: -0.6
+
+  - atDistance: 7120
+    type: "wave"
+    enemy: "weaver"
+    formation: "spiral"
+    count: 8
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.15
+
+  - atDistance: 7340
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0.6 }
+    scale: 1.15
+    rotationSpeed: 1.1
+
+  - atDistance: 7500
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: -0.6 }
+    scale: 1.15
+    rotationSpeed: -1.1
+
+  - atDistance: 7680
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 0, y: 1.2 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  # ==================== ACT 3: HYPER-PLUNGE, FINAL LOOP & DREADNOUGHT APPROACH ====================
+  - atDistance: 7900
+    type: "banner"
+    text: "CANYON DROP-OFF // BRACE FOR HYPER-PLUNGE!"
+
+  - atDistance: 8060
+    type: "track_stunt"
+    stunt: "dive"
+    duration: 5.0
+    label: "HYPER-PLUNGE // MAXIMUM CANYON VELOCITY!"
+
+  - atDistance: 8220
+    type: "wave"
+    enemy: "scout"
+    formation: "flanking"
+    count: 9
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.1
+
+  - atDistance: 8460
+    type: "obstacle"
+    kind: "monolith_pillar"
+    position: { x: -3.2, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 8600
+    type: "obstacle"
+    kind: "monolith_pillar"
+    position: { x: 3.2, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 8780
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0 }
+    scale: 1.1
+    rotationSpeed: 1.5
+
+  - atDistance: 8960
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 7
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "swoop_pass"
+    fireRate: 1.2
+
+  - atDistance: 9180
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: -8.5, y: 1.2 }
+    scale: 1.35
+    rotationSpeed: 1.0
+    driftX: 5.2
+    driftY: -0.5
+
+  - atDistance: 9340
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: 8.5, y: -1.0 }
+    scale: 1.35
+    rotationSpeed: -1.0
+    driftX: -5.2
+    driftY: 0.4
+
+  - atDistance: 9540
+    type: "wave"
+    enemy: "turret"
+    formation: "line"
+    count: 5
+    spawnOffset: { x: 0, y: -0.5 }
+    behavior: "hover_fire"
+    fireRate: 1.2
+
+  - atDistance: 9760
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -4.0, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9920
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.0, y: -0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 10080
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 0, y: 1.2 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 10220
+    type: "track_stunt"
+    stunt: "loop"
+    duration: 5.0
+    label: "FINAL CANYON 360° LOOP // INTERCEPTOR GAUNTLET!"
+
+  - atDistance: 10440
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 7
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "swoop_pass"
+    fireRate: 1.25
+
+  - atDistance: 10720
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 0, y: 0 }
+    scale: 1.2
+    rotationSpeed: 1.35
+
+  - atDistance: 10940
+    type: "wave"
+    enemy: "weaver"
+    formation: "flanking"
+    count: 8
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.2
+
+  - atDistance: 11180
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0 }
+    scale: 1.2
+    rotationSpeed: -1.25
+
+  - atDistance: 11400
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: -3.5, y: 0.8 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 11540
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 0, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 11680
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 3.5, y: -0.8 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 11840
     type: "banner"
     text: "WARNING // MASSIVE SIGNATURE DETECTED"
 
-  - atDistance: 3620
+  - atDistance: 12000
     type: "boss"
     bossId: "aegis_dreadnought"
     name: "AEGIS DREADNOUGHT"

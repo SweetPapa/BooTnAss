@@ -1,8 +1,8 @@
 id: "prism-belt"
 name: "02 // PRISM ASTEROID BELT"
-subtitle: "Shattered Crystal Nebula"
-baseSpeed: 58
-length: 4800
+subtitle: "Shield Crystals, Corkscrews & Squadron Rescue"
+baseSpeed: 72
+length: 14600
 
 environment:
   theme: "asteroid_field"
@@ -14,9 +14,10 @@ environment:
   ambientIntensity: 0.45
 
 timeline:
+  # ==================== ACT 1: PRISM BELT ENTRY (ORIGINAL SEQUENCE PRESERVED) ====================
   - atDistance: 130
     type: "banner"
-    text: "PRISM BELT // BLAST OR DODGE CENTER BOULDERS"
+    text: "PRISM BELT // SHATTER CRYSTALS FOR SHIELD SHARDS!"
 
   - atDistance: 250
     type: "obstacle"
@@ -219,11 +220,325 @@ timeline:
     scale: 1.2
     rotationSpeed: 0.0
 
-  - atDistance: 4080
+  # ==================== ACT 2: GRAVITY CORKSCREW, CRYSTAL FIELD & AMBUSH ====================
+  - atDistance: 4200
+    type: "banner"
+    text: "PRISM VORTEX // SHATTER CRYSTALS TO RECHARGE!"
+
+  - atDistance: 4380
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: -3.2, y: 0.8 }
+    scale: 1.55
+    rotationSpeed: 0.85
+
+  - atDistance: 4520
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 3.2, y: -0.8 }
+    scale: 1.55
+    rotationSpeed: -0.85
+
+  - atDistance: 4680
+    type: "track_stunt"
+    stunt: "corkscrew"
+    duration: 5.4
+    label: "360° PRISM CORKSCREW // HOLD ON TIGHT!"
+
+  - atDistance: 4860
+    type: "wave"
+    enemy: "weaver"
+    formation: "spiral"
+    count: 8
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.2
+
+  - atDistance: 5120
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 0, y: 0.4 }
+    scale: 1.6
+    rotationSpeed: 0.9
+
+  - atDistance: 5340
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: -2.0, y: 1.0 }
+    scale: 1.1
+    rotationSpeed: 1.4
+
+  - atDistance: 5540
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 8
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "swoop_pass"
+    fireRate: 1.3
+
+  - atDistance: 5780
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 0, y: 0 }
+    scale: 1.2
+    rotationSpeed: 1.35
+
+  - atDistance: 5980
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: -9.0, y: 1.5 }
+    scale: 1.45
+    rotationSpeed: 1.1
+    driftX: 6.2
+    driftY: -0.6
+
+  - atDistance: 6160
+    type: "wave"
+    enemy: "turret"
+    formation: "line"
+    count: 5
+    spawnOffset: { x: 0, y: -0.5 }
+    behavior: "hover_fire"
+    fireRate: 1.3
+
+  - atDistance: 6400
+    type: "banner"
+    text: "ALERT // HEAVY ALIEN AMBUSH CLOSING IN!"
+
+  - atDistance: 6560
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 9
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "swoop_pass"
+    fireRate: 1.35
+
+  - atDistance: 6740
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 0, y: 0 }
+    scale: 1.6
+    rotationSpeed: -0.7
+
+  # ==================== MIDPOINT REAL-TIME IN-GAME SQUADRON ARRIVAL CUTSCENE! ====================
+  - atDistance: 6900
+    type: "allies_arrive"
+    cinematic: true
+
+  # ==================== ACT 3: FULL SQUADRON PUSH WITH BLITZ & TANK! ====================
+  - atDistance: 7220
+    type: "wave"
+    enemy: "scout"
+    formation: "spiral"
+    count: 10
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.25
+
+  - atDistance: 7480
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: -3.5, y: 0 }
+    scale: 1.5
+    rotationSpeed: 0.7
+
+  - atDistance: 7640
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 3.5, y: 0 }
+    scale: 1.5
+    rotationSpeed: -0.7
+
+  - atDistance: 7860
+    type: "wave"
+    enemy: "weaver"
+    formation: "flanking"
+    count: 10
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "sine_weave"
+    fireRate: 1.3
+
+  - atDistance: 8140
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0 }
+    scale: 1.25
+    rotationSpeed: -1.3
+
+  - atDistance: 8360
+    type: "track_stunt"
+    stunt: "slalom_wave"
+    duration: 5.4
+    label: "PRISM SLALOM DRIFT // COVER YOUR WINGMEN!"
+
+  - atDistance: 8560
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -4.5, y: 0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 8760
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 9
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.35
+
+  - atDistance: 8960
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.5, y: -0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9200
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0.5 }
+    scale: 1.1
+    rotationSpeed: 1.5
+
+  - atDistance: 9420
+    type: "wave"
+    enemy: "turret"
+    formation: "flanking"
+    count: 6
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "hover_fire"
+    fireRate: 1.35
+
+  - atDistance: 9680
+    type: "obstacle"
+    kind: "debris_field"
+    position: { x: 2.5, y: 0 }
+    scale: 1.25
+    rotationSpeed: 1.0
+
+  - atDistance: 9900
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: -2.0, y: 0.5 }
+    scale: 1.65
+    rotationSpeed: 0.85
+
+  - atDistance: 10160
+    type: "track_stunt"
+    stunt: "loop"
+    duration: 5.2
+    label: "360° NEBULA LOOP // SQUADRON FORMATION!"
+
+  - atDistance: 10400
+    type: "wave"
+    enemy: "weaver"
+    formation: "spiral"
+    count: 11
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.35
+
+  - atDistance: 10720
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: -2.2, y: 0 }
+    scale: 1.2
+    rotationSpeed: 1.4
+
+  - atDistance: 10940
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 2.2, y: 0 }
+    scale: 1.2
+    rotationSpeed: -1.4
+
+  - atDistance: 11200
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 10
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "swoop_pass"
+    fireRate: 1.4
+
+  - atDistance: 11520
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: -8.5, y: 0.5 }
+    scale: 1.45
+    rotationSpeed: 1.2
+    driftX: 6.4
+    driftY: 0.0
+
+  - atDistance: 11700
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: 8.5, y: -0.5 }
+    scale: 1.45
+    rotationSpeed: -1.2
+    driftX: -6.4
+    driftY: 0.0
+
+  - atDistance: 11960
+    type: "track_stunt"
+    stunt: "corkscrew"
+    duration: 5.2
+    label: "FINAL PRISM CORKSCREW // SENTINEL AHEAD!"
+
+  - atDistance: 12240
+    type: "wave"
+    enemy: "scout"
+    formation: "flanking"
+    count: 11
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.35
+
+  - atDistance: 12580
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 0, y: 0 }
+    scale: 1.65
+    rotationSpeed: 0.9
+
+  - atDistance: 12840
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 8
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "swoop_pass"
+    fireRate: 1.4
+
+  - atDistance: 13160
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: -3.5, y: 0.6 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 13300
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 0, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 13440
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 3.5, y: -0.6 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 13640
     type: "banner"
     text: "WARNING // SENTINEL CORE AWAKENING"
 
-  - atDistance: 4200
+  - atDistance: 13800
     type: "boss"
     bossId: "octa_core_sentinel"
     name: "OCTA-CORE SENTINEL"
