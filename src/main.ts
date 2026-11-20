@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Renderer } from './render/Renderer';
 import { GameState } from './engine/GameState';
 import { InputManager } from './engine/InputManager';
-import { AudioSynth } from './engine/AudioSynth';
+import { AudioSynth, type VoicePriority } from './engine/AudioSynth';
 import { ParticlePool } from './engine/ParticlePool';
 import { CollisionSystem } from './engine/CollisionSystem';
 import { PlayerShip } from './entities/PlayerShip';
@@ -145,6 +145,17 @@ class StarburstGame {
   // Opening crawl audio auto-start flag
   private crawlAudioStarted = false;
 
+  // Cutscene anti-accidental-skip state (1.0s lockout + 0.6s hold-to-skip)
+  private cutsceneLockoutTimer = 0;
+  private cutsceneSkipHoldTimer = 0;
+
+  // Sector 1 contextual onboarding prompts (first 25s only)
+  private sectorElapsedTime = 0;
+  private promptBoostShown = false;
+  private promptRollShown = false;
+  private promptBombShown = false;
+  private activeTutorialPrompt: 'boost' | 'roll' | 'bomb' | null = null;
+
   // Game feel ("Juice") + Arcade Racer Turbo
   private hitstopTimer = 0;
   private screenShake = 0;
@@ -284,9 +295,9 @@ class StarburstGame {
 
     window.addEventListener('keydown', (e) => {
       if (this.hud.isCutscenePlaying) {
+        // Cutscene skip is strictly Hold-to-Skip (0.6s after 1.0s lockout) handled in step()
         if (e.code === 'Space' || e.code === 'Escape' || e.code === 'Enter') {
           e.preventDefault();
-          this.hud.skipActiveCutscene(true);
         }
         return;
       }
@@ -317,10 +328,13 @@ class StarburstGame {
     void this.boot();
   }
 
-  private playCutsceneThen(videoId: string, onDone: () => void): void {
+  private playCutsceneThen(videoId: string, onDone: () => void, fallbackUrl?: string): void {
     this.audio.stopMusicTrack();
     this.audio.stopVO();
-    this.hud.playCutscene(videoId, this.state.muted, onDone);
+    this.cutsceneLockoutTimer = 1.0; // 1.0s input lockout prevents accidental launch-button skips!
+    this.cutsceneSkipHoldTimer = 0;
+    this.hud.playCutscene(videoId, this.state.muted, onDone, fallbackUrl);
+    this.hud.updateCutsceneSkipUI(true, 0);
   }
 
   private startCrawlAudio(forceRestart: boolean): void {
@@ -353,23 +367,47 @@ class StarburstGame {
     priority = false,
     chance = 1.0
   ): void {
-    // Never interrupt active VO unless priority event; keep casual banter spaced out and fresh!
+    const list = BANTER[category];
+    if (!list || list.length === 0) return;
+
     if (!priority) {
-      if (this.audio.isVoPlaying()) return;
       if (this.casualBanterCooldown > 0) return;
       if (Math.random() > chance) return;
     }
 
-    const list = BANTER[category];
-    if (!list || list.length === 0) return;
-
-    const idx = this.drawFromShuffleBag(category, list.length);
-    const line = list[idx];
-    if (!priority) {
-      this.casualBanterCooldown = 7.5;
+    // Pick a line from the shuffle bag that isn't currently on 12s per-line cooldown
+    let chosen: BanterLine | null = null;
+    for (let attempt = 0; attempt < list.length; attempt++) {
+      const idx = this.drawFromShuffleBag(category, list.length);
+      const candidate = list[idx];
+      if (!this.audio.isLineOnCooldown(candidate.voId, 12000)) {
+        chosen = candidate;
+        break;
+      }
     }
-    this.hud.showComms(line.speaker, line.text, duration);
-    void this.audio.playVO(line.voId, line.speaker !== 'boss', priority);
+    if (!chosen) return;
+
+    // Single-channel priority: Boss (3) > Wingman/Commander (2) > System/Grunt (1)
+    const voicePriority: VoicePriority =
+      chosen.speaker === 'boss'
+        ? 3
+        : chosen.speaker === 'wingman' || chosen.speaker === 'commander'
+          ? 2
+          : 1;
+
+    const line = chosen;
+    const queued = this.audio.enqueueVO(
+      line.voId,
+      priority ? (Math.max(voicePriority, 2) as VoicePriority) : voicePriority,
+      line.speaker !== 'boss',
+      () => {
+        this.hud.showComms(line.speaker, line.text, duration);
+      },
+      false
+    );
+    if (queued && !priority) {
+      this.casualBanterCooldown = 6.0;
+    }
   }
 
   private handleBootStart(): void {
@@ -408,6 +446,7 @@ class StarburstGame {
     this.storyData = await this.hud.loadStoryFile();
 
     // Always start with the big arcade START button so window focus & audio are 100% unlocked!
+    this.hud.preloadCutscene('intro-launch');
     this.state.phase = 'Boot';
     this.player.reset();
     this.player.root.visible = true;
@@ -457,6 +496,24 @@ class StarburstGame {
     this.ambientHazardTimer = 1.6;
     this.ambientCycle = 0;
     this.lockedTargets = [];
+
+    // Reset Sector 1 onboarding prompts
+    this.sectorElapsedTime = 0;
+    this.promptBoostShown = false;
+    this.promptRollShown = false;
+    this.promptBombShown = false;
+    this.activeTutorialPrompt = null;
+
+    // Preload this sector's boss cutscene + gameover/victory so there is ZERO black flash!
+    const bossEv = level.timeline.find((e) => e.type === 'boss');
+    if (bossEv && bossEv.type === 'boss') {
+      const bossVid = BOSS_CUTSCENE_MAP[bossEv.bossId];
+      if (bossVid) this.hud.preloadCutscene(bossVid);
+    }
+    this.hud.preloadCutscene('gameover-eject');
+    if (index === this.levels.length - 1) {
+      this.hud.preloadCutscene('victory-ending');
+    }
 
     this.player.reset();
     this.trackCurve.reset();
@@ -564,10 +621,25 @@ class StarburstGame {
   private step(dt: number): void {
     const input = this.input.poll();
 
-    // Pause simulation cleanly while a fullscreen cutscene plays; Controller A / Start skips!
+    // Pause simulation cleanly while a fullscreen cutscene plays.
+    // 1.0s input lockout + Hold [SPACE / A / Click] for 0.6s to skip!
     if (this.hud.isCutscenePlaying) {
-      if (input.menuConfirmPressed || input.pausePressed) {
-        this.hud.skipActiveCutscene(true);
+      if (this.cutsceneLockoutTimer > 0) {
+        this.cutsceneLockoutTimer = Math.max(0, this.cutsceneLockoutTimer - dt);
+        this.cutsceneSkipHoldTimer = 0;
+        this.hud.updateCutsceneSkipUI(true, 0);
+      } else {
+        const holding = input.skipHeld || this.hud.isCutsceneMouseSkipHeld();
+        if (holding) {
+          this.cutsceneSkipHoldTimer += dt;
+          this.hud.updateCutsceneSkipUI(false, this.cutsceneSkipHoldTimer / 0.6);
+          if (this.cutsceneSkipHoldTimer >= 0.6) {
+            this.hud.skipActiveCutscene(true);
+          }
+        } else {
+          this.cutsceneSkipHoldTimer = Math.max(0, this.cutsceneSkipHoldTimer - dt * 2.5);
+          this.hud.updateCutsceneSkipUI(false, this.cutsceneSkipHoldTimer / 0.6);
+        }
       }
       return;
     }
@@ -593,7 +665,7 @@ class StarburstGame {
         } else if (this.state.phase === 'Title') {
           this.state.totalCampaignScore = 0;
           this.bossCheckpointDist = null;
-          this.startLevel(0, 0);
+          this.playCutsceneThen('intro-launch', () => this.startLevel(0, 0));
           return;
         } else if (this.state.phase === 'Paused') {
           this.state.phase = 'Playing';
@@ -667,16 +739,25 @@ class StarburstGame {
       railSpeed,
       this.state.mouseAimEnabled
     );
-    if (startedBoost) this.audio.playBoost();
+    if (startedBoost) {
+      this.audio.playBoost();
+      if (this.activeTutorialPrompt === 'boost') {
+        this.hud.hideTutorialPrompt();
+        this.activeTutorialPrompt = null;
+      }
+    }
     if (startedRoll) {
       this.audio.playBarrelRoll();
       this.input.rumble(0.25, 0.3, 80);
+      if (this.activeTutorialPrompt === 'roll') {
+        this.hud.hideTutorialPrompt();
+        this.activeTutorialPrompt = null;
+      }
     }
     if (startedSomersault) {
       this.audio.playSomersault();
       this.input.rumble(0.55, 0.45, 160);
       this.particles.spawnShockwave(this.player.position.clone(), 0xffd447, 16, 0.45);
-      // EMP pulse clears nearby enemy bullets!
       for (const p of this.projectiles.projectiles) {
         if (p.active && p.kind === 'enemy_plasma' && p.pos.distanceTo(this.player.position) < 20) {
           p.active = false;
@@ -686,6 +767,41 @@ class StarburstGame {
     }
     if (input.novaBombPressed) {
       this.triggerNovaBomb();
+      if (this.activeTutorialPrompt === 'bomb') {
+        this.hud.hideTutorialPrompt();
+        this.activeTutorialPrompt = null;
+      }
+    }
+
+    // Contextual Sector 1 Onboarding Prompts (first 25 seconds of Sector 1 only!)
+    this.sectorElapsedTime += dt;
+    if (this.state.currentLevelIndex === 0 && this.sectorElapsedTime <= 25 && !this.boss.active) {
+      if (!this.promptBoostShown && this.sectorElapsedTime >= 2.8) {
+        const hasGateOrRing = this.obstacles.obstacles.some(
+          (o) => o.alive && (o.kind === 'boost_ring' || o.kind === 'slalom_gate')
+        );
+        if (hasGateOrRing || this.sectorElapsedTime >= 4.2) {
+          this.promptBoostShown = true;
+          this.activeTutorialPrompt = 'boost';
+          this.hud.showTutorialPrompt('HOLD [RT / SHIFT / F] — BOOST', 5.0);
+        }
+      } else if (!this.promptRollShown && this.sectorElapsedTime >= 8.5) {
+        const enemyFired = this.projectiles.projectiles.some(
+          (p) => p.active && p.kind === 'enemy_plasma'
+        );
+        if (enemyFired) {
+          this.promptRollShown = true;
+          this.activeTutorialPrompt = 'roll';
+          this.hud.showTutorialPrompt('TAP [LB/RB / Q/E] — BARREL ROLL (DEFLECT)', 5.0);
+        }
+      } else if (!this.promptBombShown && this.sectorElapsedTime >= 15.0) {
+        const aliveEnemies = this.enemies.enemies.filter((e) => e.alive).length;
+        if (aliveEnemies >= 3) {
+          this.promptBombShown = true;
+          this.activeTutorialPrompt = 'bomb';
+          this.hud.showTutorialPrompt('PRESS [X / B] — NOVA SMART BOMB', 5.0);
+        }
+      }
     }
 
     if (Math.random() < (isSuperBoost ? 0.92 : 0.48)) {
@@ -936,16 +1052,30 @@ class StarburstGame {
       }
     );
 
-    // 7. Boss Defeat -> Level Clear (with Victory Fanfare music!)
+    // 7. Boss Defeat -> Level Clear (or Victory Cutscene -> FRONTIER LIBERATED on final Sector 3!)
     if (this.bossClearDelay > 0) {
       this.bossClearDelay -= dt;
       if (this.bossClearDelay <= 0 && this.state.phase === 'Playing') {
         this.state.stats.shieldRemaining = this.player.shield;
         const { totalLevelScore } = this.state.computeRank();
         this.state.totalCampaignScore += totalLevelScore;
-        this.state.phase = 'LevelClear';
-        this.audio.playMusicTrack('victory-fanfare', true, 0.52);
-        this.hud.renderPhase('LevelClear', this.state, this.levels);
+
+        const isFinalSector = this.state.currentLevelIndex >= this.levels.length - 1;
+        if (isFinalSector) {
+          this.state.phase = 'Victory';
+          this.playCutsceneThen(
+            'victory-ending',
+            () => {
+              this.audio.playMusicTrack('victory-fanfare', true, 0.52);
+              this.hud.renderPhase('Victory', this.state, this.levels);
+            },
+            '/assets/videos/victory_cutscene.mp4'
+          );
+        } else {
+          this.state.phase = 'LevelClear';
+          this.audio.playMusicTrack('victory-fanfare', true, 0.52);
+          this.hud.renderPhase('LevelClear', this.state, this.levels);
+        }
         return;
       }
     }

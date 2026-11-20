@@ -334,7 +334,8 @@ export class EnemyFactory {
         }
       }
 
-      if (pos.z > 24) {
+      // Cull before camera near-plane frustum (camera z=14)
+      if (pos.z > 10.0) {
         e.alive = false;
         this.scene.remove(e.mesh);
         this.enemies.splice(i, 1);

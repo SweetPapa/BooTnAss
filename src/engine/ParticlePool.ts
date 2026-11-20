@@ -129,6 +129,8 @@ export class ParticlePool {
   }
 
   public spawnShockwave(origin: THREE.Vector3, hexColor: number, maxScale = 14, duration = 0.55): void {
+    // Clamp shockwave away from camera near-plane frustum (camera z=14)
+    if (origin.z > 9.5) return;
     const mat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(hexColor).multiplyScalar(2.6),
       transparent: true,
@@ -154,7 +156,7 @@ export class ParticlePool {
       if (!p.active) continue;
 
       p.life -= dt;
-      if (p.life <= 0) {
+      if (p.life <= 0 || p.pos.z > 10.5) {
         p.active = false;
         this.dummy.scale.set(0, 0, 0);
         this.dummy.updateMatrix();

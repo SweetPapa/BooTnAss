@@ -157,7 +157,8 @@ export class ProjectilePool {
       }
 
       proj.life -= dt;
-      if (proj.life <= 0 || proj.pos.z < -260 || proj.pos.z > 32) {
+      // Cull before camera near-plane frustum (camera z=14, near+1.5 => cull past z=10.5)
+      if (proj.life <= 0 || proj.pos.z < -260 || proj.pos.z > 10.5) {
         proj.active = false;
         this.projectiles.splice(i, 1);
         continue;

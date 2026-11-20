@@ -972,9 +972,159 @@ body,
   position: fixed;
   top: 18px;
   right: 24px;
-  z-index: 90;
+  z-index: 95;
   display: flex;
   gap: 10px;
+  align-items: center;
+}
+
+.cutscene-skip-pill {
+  position: relative;
+  overflow: hidden;
+  padding: 10px 20px;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #ffffff;
+  background: rgba(6, 12, 28, 0.86);
+  border: 1.5px solid var(--cyan);
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.35);
+}
+
+.cutscene-skip-pill.locked {
+  opacity: 0.42;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.cutscene-skip-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(0, 240, 255, 0.55), rgba(255, 212, 71, 0.7));
+  pointer-events: none;
+  transition: width 0.04s linear;
+}
+
+.cutscene-skip-label {
+  position: relative;
+  z-index: 2;
+}
+
+/* Synthwave Glitch/Scanline Transition covering video decode (eliminates black flash!) */
+.cutscene-glitch-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 88;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.14) 0px, rgba(0, 240, 255, 0.14) 2px, transparent 2px, transparent 6px),
+    radial-gradient(ellipse at center, rgba(255, 42, 133, 0.36) 0%, rgba(7, 9, 26, 0.96) 72%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.35em;
+  color: var(--cyan);
+  text-shadow: 0 0 22px var(--cyan), -3px 0 var(--magenta);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.cutscene-glitch-veil.fade-out {
+  opacity: 0;
+}
+
+/* Contextual Sector 1 Onboarding Control Prompt */
+.tutorial-prompt {
+  position: absolute;
+  bottom: 112px;
+  left: 50%;
+  transform: translateX(-50%) translateY(14px);
+  padding: 12px 24px;
+  background: rgba(5, 14, 34, 0.9);
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+  box-shadow: 0 0 28px rgba(255, 212, 71, 0.45);
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #fff6c2;
+  text-shadow: 0 0 12px rgba(255, 212, 71, 0.7);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 25;
+}
+
+.tutorial-prompt.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Local Arcade Leaderboard Table & Initials Entry */
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0 20px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+}
+
+.leaderboard-table th {
+  color: var(--cyan);
+  letter-spacing: 0.16em;
+  border-bottom: 1.5px solid rgba(0, 240, 255, 0.4);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.leaderboard-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #eef9ff;
+}
+
+.leaderboard-table tr:first-child td {
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.initials-form {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  margin: 14px 0 18px;
+}
+
+.initials-input {
+  width: 120px;
+  padding: 10px 12px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(4, 10, 26, 0.92);
+  border: 2px solid var(--cyan);
+  border-radius: 5px;
+  outline: none;
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.3);
+}
+
+.initials-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 24px rgba(255, 212, 71, 0.55);
 }
 
 /* ==================== BIG ARCADE BOOT START SCREEN ==================== */

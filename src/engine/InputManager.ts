@@ -17,6 +17,7 @@ export interface InputState {
   mouseNdcY: number;
   pausePressed: boolean;
   menuConfirmPressed: boolean;
+  skipHeld: boolean;
   gamepadConnected: boolean;
   gamepadName: string;
   gamepadProfile: ControllerProfile;
@@ -306,6 +307,11 @@ export class InputManager {
     let menuConfirmPressed = this.menuConfirmQueued;
     this.menuConfirmQueued = false;
 
+    let skipHeld =
+      this.keys.has('Space') ||
+      this.keys.has('Escape') ||
+      this.keys.has('Enter');
+
     const pad = this.getActiveGamepad();
     if (pad) {
       const deadzone = 0.16;
@@ -376,6 +382,7 @@ export class InputManager {
 
       if (freshBtn(startIdx)) pausePressed = true;
       if (freshBtn(fireBtnIdx) || freshBtn(startIdx)) menuConfirmPressed = true;
+      if (btn(fireBtnIdx) || btn(startIdx)) skipHeld = true;
 
       this.prevPadButtons = pad.buttons.map((_, idx) => btn(idx));
     } else {
@@ -408,6 +415,7 @@ export class InputManager {
       mouseNdcY: this.mouseNdcY,
       pausePressed,
       menuConfirmPressed,
+      skipHeld,
       gamepadConnected: this.gamepadConnected,
       gamepadName: this.gamepadName,
       gamepadProfile: this.gamepadProfile,

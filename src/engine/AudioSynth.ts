@@ -1,3 +1,12 @@
+export type VoicePriority = 1 | 2 | 3; // 1 = System, 2 = Wingman, 3 = Boss
+
+interface QueuedVoiceLine {
+  id: string;
+  priority: VoicePriority;
+  radioFilter: boolean;
+  onStart?: () => void;
+}
+
 export class AudioSynth {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -20,13 +29,77 @@ export class AudioSynth {
   private bgmBaseVolume = 0.42;
   private bgmDuckFactor = 0.72; // Gentle ducking during gameplay so music stays punchy!
 
-  // Cached voiceover AudioBuffers
+  // Single-channel voice queue with priority (Boss > Wingman > System), 1.5s min gap, 12s per-line cooldown
   private voCache = new Map<string, AudioBuffer>();
   private currentVoSource: AudioBufferSourceNode | null = null;
   private voPlaying = false;
+  private voLastEndedAt = 0;
+  private voPerLineCooldown = new Map<string, number>();
+  private voQueue: QueuedVoiceLine | null = null;
+  private voGapTimer: number | null = null;
 
   public isVoPlaying(): boolean {
     return this.voPlaying;
+  }
+
+  public isLineOnCooldown(id: string, cooldownMs = 12000): boolean {
+    const last = this.voPerLineCooldown.get(id);
+    if (last === undefined) return false;
+    return performance.now() - last < cooldownMs;
+  }
+
+  /**
+   * Enqueues a voice line onto the single-channel voice bus.
+   * Enforces:
+   * - Priority: Boss (3) > Wingman (2) > System (1)
+   * - Minimum 1.5s gap between spoken clips
+   * - Per-line 12s cooldown so the same clip never loops back-to-back
+   */
+  public enqueueVO(
+    id: string,
+    priority: VoicePriority,
+    radioFilter = true,
+    onStart?: () => void,
+    bypassCooldown = false
+  ): boolean {
+    if (this.muted) return false;
+    if (!bypassCooldown && this.isLineOnCooldown(id, 12000)) return false;
+
+    const now = performance.now();
+    const gapRemaining = Math.max(0, 1500 - (now - this.voLastEndedAt));
+
+    if (!this.voPlaying && gapRemaining === 0) {
+      this.voPerLineCooldown.set(id, now);
+      if (onStart) onStart();
+      void this.playVO(id, radioFilter, true);
+      return true;
+    }
+
+    // Replace queued slot only if strictly higher priority (or empty)
+    if (!this.voQueue || priority > this.voQueue.priority) {
+      this.voQueue = { id, priority, radioFilter, onStart };
+      if (!this.voPlaying && gapRemaining > 0) {
+        this.scheduleQueueDrain(gapRemaining);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private scheduleQueueDrain(delayMs: number): void {
+    if (this.voGapTimer !== null) {
+      window.clearTimeout(this.voGapTimer);
+    }
+    this.voGapTimer = window.setTimeout(() => {
+      this.voGapTimer = null;
+      if (this.voPlaying || !this.voQueue) return;
+      const next = this.voQueue;
+      this.voQueue = null;
+      if (this.isLineOnCooldown(next.id, 12000)) return;
+      this.voPerLineCooldown.set(next.id, performance.now());
+      if (next.onStart) next.onStart();
+      void this.playVO(next.id, next.radioFilter, true);
+    }, delayMs);
   }
 
   public playMusicTrack(trackId: string, loop = true, volume = 0.42, duckFactor = 0.72): void {
@@ -624,7 +697,11 @@ export class AudioSynth {
         if (this.currentVoSource === src) {
           this.currentVoSource = null;
           this.voPlaying = false;
+          this.voLastEndedAt = performance.now();
           this.updateBgmDucking();
+          if (this.voQueue) {
+            this.scheduleQueueDrain(1500);
+          }
         }
       };
       src.start();
@@ -637,6 +714,11 @@ export class AudioSynth {
   }
 
   public stopVO(): void {
+    if (this.voGapTimer !== null) {
+      window.clearTimeout(this.voGapTimer);
+      this.voGapTimer = null;
+    }
+    this.voQueue = null;
     if (this.currentVoSource) {
       try {
         this.currentVoSource.onended = null;

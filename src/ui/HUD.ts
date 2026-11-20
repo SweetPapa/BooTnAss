@@ -1,6 +1,7 @@
 import type { GamePhase, GameState } from '../engine/GameState';
 import type { LevelConfig } from '../levels/LevelSchema';
 import type { LevelLoadError } from '../levels/LevelLoader';
+import { Leaderboard } from '../engine/Leaderboard';
 
 export interface StoryCrawlData {
   episode: string;
@@ -87,50 +88,143 @@ export class HUD {
   private hitConfirmTimer = 0;
   private activeCutsceneDone: (() => void) | null = null;
   private activeCutsceneEl: HTMLElement | null = null;
+  private cutsceneSkipFillEl: HTMLElement | null = null;
+  private cutsceneSkipPillEl: HTMLElement | null = null;
+  private cutsceneMouseHeld = false;
+  private preloadedVideos = new Map<string, HTMLVideoElement>();
+  private tutorialPromptEl: HTMLElement | null = null;
+  private tutorialTimer = 0;
 
-  public playCutscene(videoId: string, muted: boolean, onDone: () => void): void {
+  /**
+   * Preloads a cutscene video off-DOM so boss intros start instantaneously with zero black flash!
+   */
+  public preloadCutscene(videoId: string): void {
+    if (this.preloadedVideos.has(videoId)) return;
+    const vid = document.createElement('video');
+    vid.preload = 'auto';
+    vid.playsInline = true;
+    vid.muted = true;
+    vid.src = `/assets/video/${videoId}.mp4`;
+    vid.load();
+    this.preloadedVideos.set(videoId, vid);
+  }
+
+  public playCutscene(videoId: string, muted: boolean, onDone: () => void, fallbackUrl?: string): void {
     this.skipActiveCutscene(false);
+    this.cutsceneMouseHeld = false;
 
     const overlay = document.createElement('div');
     overlay.className = 'cutscene-overlay interactive';
     overlay.innerHTML = `
-      <video class="cutscene-video" playsinline autoplay ${muted ? 'muted' : ''}>
-        <source src="/assets/video/${videoId}.mp4" type="video/mp4" />
-      </video>
+      <div class="cutscene-glitch-veil" id="cutscene-veil">INCOMING TRANSMISSION // SYNCING...</div>
       <div class="cutscene-skip-bar">
-        <button id="btn-cutscene-skip" class="neon-btn small">SKIP [SPACE / A]</button>
+        <div id="btn-cutscene-skip" class="cutscene-skip-pill locked">
+          <div class="cutscene-skip-fill" id="cutscene-skip-fill"></div>
+          <span class="cutscene-skip-label">HOLD [SPACE / A] TO SKIP</span>
+        </div>
       </div>
     `;
+
+    // Reuse preloaded video element if available (zero decode delay!)
+    const cached = this.preloadedVideos.get(videoId);
+    const video = cached ?? document.createElement('video');
+    video.className = 'cutscene-video';
+    video.playsInline = true;
+    video.autoplay = true;
+    video.muted = muted;
+    if (!cached) {
+      video.src = `/assets/video/${videoId}.mp4`;
+    } else {
+      video.currentTime = 0;
+    }
+
+    overlay.prepend(video);
     this.root.appendChild(overlay);
     this.activeCutsceneEl = overlay;
     this.activeCutsceneDone = onDone;
+    this.cutsceneSkipPillEl = overlay.querySelector('#btn-cutscene-skip');
+    this.cutsceneSkipFillEl = overlay.querySelector('#cutscene-skip-fill');
 
-    const video = overlay.querySelector('video') as HTMLVideoElement;
+    const veil = overlay.querySelector('#cutscene-veil') as HTMLElement | null;
+    const liftVeil = () => {
+      if (!veil) return;
+      veil.classList.add('fade-out');
+      window.setTimeout(() => veil.remove(), 340);
+    };
+
     const finish = () => this.skipActiveCutscene(true);
 
-    video.addEventListener('ended', finish);
-    video.addEventListener('error', finish);
-    overlay.querySelector('#btn-cutscene-skip')?.addEventListener('click', (e) => {
+    let triedFallback = false;
+    const onError = () => {
+      if (!triedFallback && fallbackUrl) {
+        triedFallback = true;
+        video.src = fallbackUrl;
+        video.load();
+        video.play().catch(finish);
+        return;
+      }
+      // Graceful synthwave celebration fallback if video asset is missing
+      if (veil) {
+        veil.textContent = 'FRONTIER LIBERATED // VICTORY!';
+        window.setTimeout(finish, 1800);
+      } else {
+        finish();
+      }
+    };
+
+    video.addEventListener('ended', finish, { once: true });
+    video.addEventListener('error', onError);
+    if (video.readyState >= 2) {
+      window.setTimeout(liftVeil, 180);
+    } else {
+      video.addEventListener('loadeddata', () => window.setTimeout(liftVeil, 120), { once: true });
+      window.setTimeout(liftVeil, 420);
+    }
+
+    // Mouse hold on skip pill also fills the 0.6s skip bar
+    this.cutsceneSkipPillEl?.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      finish();
+      this.cutsceneMouseHeld = true;
     });
+    window.addEventListener('pointerup', this.onCutscenePointerUp);
 
     video.play().catch(() => {
-      // Fallback: if unmuted autoplay is blocked, play muted so the cutscene never hangs
       video.muted = true;
-      video.play().catch(finish);
+      video.play().catch(onError);
     });
   }
 
+  private onCutscenePointerUp = (): void => {
+    this.cutsceneMouseHeld = false;
+  };
+
+  public isCutsceneMouseSkipHeld(): boolean {
+    return this.cutsceneMouseHeld;
+  }
+
+  public updateCutsceneSkipUI(locked: boolean, progress01: number): void {
+    if (this.cutsceneSkipPillEl) {
+      this.cutsceneSkipPillEl.classList.toggle('locked', locked);
+    }
+    if (this.cutsceneSkipFillEl) {
+      this.cutsceneSkipFillEl.style.width = `${Math.min(100, Math.max(0, progress01 * 100)).toFixed(1)}%`;
+    }
+  }
+
   public skipActiveCutscene(invokeCallback = true): void {
+    window.removeEventListener('pointerup', this.onCutscenePointerUp);
+    this.cutsceneMouseHeld = false;
     if (this.activeCutsceneEl) {
       const vid = this.activeCutsceneEl.querySelector('video');
       if (vid) {
         vid.pause();
-        vid.src = '';
+        // Detach from DOM without destroying preloaded cache
+        vid.remove();
       }
       this.activeCutsceneEl.remove();
       this.activeCutsceneEl = null;
+      this.cutsceneSkipFillEl = null;
+      this.cutsceneSkipPillEl = null;
     }
     const cb = this.activeCutsceneDone;
     this.activeCutsceneDone = null;
@@ -139,6 +233,19 @@ export class HUD {
 
   public get isCutscenePlaying(): boolean {
     return this.activeCutsceneEl !== null;
+  }
+
+  public showTutorialPrompt(text: string, duration = 5.0): void {
+    if (!this.tutorialPromptEl) return;
+    this.tutorialPromptEl.textContent = text;
+    this.tutorialPromptEl.classList.add('visible');
+    this.tutorialTimer = duration;
+  }
+
+  public hideTutorialPrompt(): void {
+    if (!this.tutorialPromptEl) return;
+    this.tutorialPromptEl.classList.remove('visible');
+    this.tutorialTimer = 0;
   }
   private mousePill: HTMLElement | null = null;
   private mutePill: HTMLElement | null = null;
@@ -371,11 +478,12 @@ export class HUD {
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
         <div class="title-hero-card">
-          <div class="game-logo">STARBURST</div>
+          <div class="game-logo">BOOT N ASS</div>
           <div class="game-tagline">ON-RAILS NEON ARCADE SHOOTER</div>
           <div class="menu-actions">
             <button id="btn-start" class="neon-btn">LAUNCH CAMPAIGN</button>
             <button id="btn-levels" class="neon-btn secondary">SELECT SECTOR</button>
+            <button id="btn-leaderboard" class="neon-btn secondary">LEADERBOARD</button>
             <button id="btn-story" class="neon-btn secondary">OPENING CRAWL</button>
           </div>
           <div class="menu-actions" style="margin-bottom:14px;">
@@ -412,6 +520,7 @@ export class HUD {
 
     document.getElementById('btn-start')?.addEventListener('click', () => this.cb.onStartCampaign());
     document.getElementById('btn-levels')?.addEventListener('click', () => this.cb.onOpenLevelSelect());
+    document.getElementById('btn-leaderboard')?.addEventListener('click', () => this.renderLeaderboardModal(state));
     document.getElementById('btn-story')?.addEventListener('click', () => this.cb.onReplayCrawl());
     document.getElementById('btn-mouse-aim')?.addEventListener('click', () => this.cb.onToggleMouseAim());
     document.getElementById('btn-mute')?.addEventListener('click', () => this.cb.onToggleMute());
@@ -504,6 +613,7 @@ export class HUD {
         </div>
 
         <div class="hud-banner" id="hud-banner"></div>
+        <div class="tutorial-prompt" id="tutorial-prompt"></div>
 
         <div class="comms-box" id="comms-box">
           <img class="comms-portrait" id="comms-img" src="/assets/art/portrait-commander.jpg" alt="" />
@@ -541,6 +651,7 @@ export class HUD {
     this.bossPhaseEl = document.getElementById('boss-phase');
     this.bossHpFill = document.getElementById('boss-hp-fill');
     this.bannerEl = document.getElementById('hud-banner');
+    this.tutorialPromptEl = document.getElementById('tutorial-prompt');
     this.commsBox = document.getElementById('comms-box');
     this.commsImg = document.getElementById('comms-img') as HTMLImageElement | null;
     this.commsSpeakerEl = document.getElementById('comms-speaker');
@@ -653,6 +764,12 @@ export class HUD {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0 && this.bannerEl) {
         this.bannerEl.classList.remove('visible');
+      }
+    }
+    if (this.tutorialTimer > 0) {
+      this.tutorialTimer -= dt;
+      if (this.tutorialTimer <= 0 && this.tutorialPromptEl) {
+        this.tutorialPromptEl.classList.remove('visible');
       }
     }
     if (this.commsTimer > 0) {
@@ -820,18 +937,69 @@ export class HUD {
     document.getElementById('btn-menu')?.addEventListener('click', () => this.cb.onBackToTitle());
   }
 
-  private renderVictory(state: GameState): void {
+  private renderLeaderboardTableHtml(): string {
+    const entries = Leaderboard.load();
+    if (entries.length === 0) {
+      return '<p style="color:rgba(232,246,255,0.65);margin:16px 0;">No campaign scores recorded yet. Beat Sector 3 to claim #1!</p>';
+    }
+    const rows = entries
+      .map(
+        (e, idx) => `
+        <tr>
+          <td>#${idx + 1}</td>
+          <td>${this.escapeHtml(e.initials)}</td>
+          <td>${e.score.toLocaleString()}</td>
+          <td>${e.rank}</td>
+          <td>${this.escapeHtml(e.difficulty)}</td>
+        </tr>`
+      )
+      .join('');
+    return `
+      <table class="leaderboard-table">
+        <thead>
+          <tr><th>#</th><th>PILOT</th><th>SCORE</th><th>RANK</th><th>MODE</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  private renderLeaderboardModal(state: GameState): void {
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
-        <div class="tally-card" style="border-color:var(--gold);">
+        <div class="tally-card" style="border-color:var(--gold);max-width:620px;">
+          <div class="tally-title" style="color:var(--gold);">TOP 10 ARCADE PILOTS</div>
+          ${this.renderLeaderboardTableHtml()}
+          <div class="menu-actions" style="margin-bottom:0;">
+            <button id="btn-lb-back" class="neon-btn secondary">BACK TO BRIDGE</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('btn-lb-back')?.addEventListener('click', () => this.renderTitle(state));
+    this.bindArcadeButtonJuice();
+  }
+
+  private renderVictory(state: GameState): void {
+    const campaignRank = Leaderboard.computeCampaignRank(state.totalCampaignScore);
+    this.root.innerHTML = `
+      <div class="menu-screen interactive">
+        <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
+        <div class="tally-card" style="border-color:var(--gold);max-width:640px;">
           <div class="tally-title" style="color:var(--gold);">FRONTIER LIBERATED</div>
-          <p style="margin-bottom:18px;font-size:1.1rem;color:#dff6ff;">
-            The Hyper-Grid core has been shattered. All relay sectors are back under Starfleet control!
+          <div class="tally-rank" style="font-size:3.8rem;margin:2px 0 10px;">${campaignRank}</div>
+          <p style="margin-bottom:14px;font-size:1.05rem;color:#dff6ff;">
+            The Hyper-Grid core has been shattered. Enter your 3-letter arcade initials!
           </p>
-          <div class="tally-rows">
+          <div class="tally-rows" style="margin-bottom:10px;">
             <div class="tally-row"><span>TOTAL CAMPAIGN SCORE</span><span>${state.totalCampaignScore.toLocaleString()}</span></div>
           </div>
+          <div class="initials-form" id="initials-form">
+            <input id="initials-input" class="initials-input" type="text" maxlength="3" placeholder="ACE" value="ACE" />
+            <button id="btn-save-score" class="neon-btn small">SAVE SCORE</button>
+          </div>
+          <div id="victory-leaderboard-wrap">${this.renderLeaderboardTableHtml()}</div>
           <div class="menu-actions" style="margin-bottom:0;">
             <button id="btn-again" class="neon-btn">PLAY AGAIN</button>
             <button id="btn-levels" class="neon-btn secondary">SELECT SECTOR</button>
@@ -840,9 +1008,43 @@ export class HUD {
         </div>
       </div>
     `;
-    document.getElementById('btn-again')?.addEventListener('click', () => this.cb.onStartCampaign());
-    document.getElementById('btn-levels')?.addEventListener('click', () => this.cb.onOpenLevelSelect());
-    document.getElementById('btn-menu')?.addEventListener('click', () => this.cb.onBackToTitle());
+
+    const inputEl = document.getElementById('initials-input') as HTMLInputElement | null;
+    const saveBtn = document.getElementById('btn-save-score') as HTMLButtonElement | null;
+    const lbWrap = document.getElementById('victory-leaderboard-wrap');
+    let saved = false;
+
+    const commitScore = () => {
+      if (saved) return;
+      saved = true;
+      const initials = inputEl?.value.trim() || 'ACE';
+      Leaderboard.saveScore(initials, state.totalCampaignScore, campaignRank, 'ARCADE');
+      if (lbWrap) lbWrap.innerHTML = this.renderLeaderboardTableHtml();
+      const form = document.getElementById('initials-form');
+      if (form) {
+        form.innerHTML = `<span style="font-family:var(--font-display);color:var(--gold);letter-spacing:0.18em;">★ SCORE SAVED AS ${this.escapeHtml(initials.toUpperCase().slice(0, 3) || 'ACE')} ★</span>`;
+      }
+    };
+
+    saveBtn?.addEventListener('click', commitScore);
+    inputEl?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') commitScore();
+    });
+
+    document.getElementById('btn-again')?.addEventListener('click', () => {
+      if (!saved) commitScore();
+      this.cb.onStartCampaign();
+    });
+    document.getElementById('btn-levels')?.addEventListener('click', () => {
+      if (!saved) commitScore();
+      this.cb.onOpenLevelSelect();
+    });
+    document.getElementById('btn-menu')?.addEventListener('click', () => {
+      if (!saved) commitScore();
+      this.cb.onBackToTitle();
+    });
+    this.bindArcadeButtonJuice();
   }
 
   private escapeHtml(str: string): string {

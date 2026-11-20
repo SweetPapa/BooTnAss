@@ -374,7 +374,8 @@ export class ObstacleFactory {
         o.mesh.rotation.z += o.rotationSpeed * dt;
       }
 
-      if (o.logicalPos.z > 24) {
+      // Cull obstacles well before camera near-plane (camera z=14) so boulders/pillars never clip the lens!
+      if (o.logicalPos.z > 9.5) {
         o.alive = false;
         this.scene.remove(o.mesh);
         this.obstacles.splice(i, 1);
