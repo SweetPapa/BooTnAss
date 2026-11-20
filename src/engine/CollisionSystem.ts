@@ -14,7 +14,9 @@ export interface CollisionCallbacks {
     pos: THREE.Vector3,
     phaseBreak: boolean,
     bossDefeated: boolean,
-    partDestroyed: boolean
+    partDestroyed: boolean,
+    blocked: boolean,
+    shatteredShield: boolean
   ) => void;
   onPlayerDamaged: (amount: number, pos: THREE.Vector3, source: 'projectile' | 'obstacle' | 'beam' | 'enemy') => void;
   onDeflectShot: (proj: Projectile) => void;
@@ -45,11 +47,13 @@ export class CollisionSystem {
     enemies: EnemyFactory,
     obstacles: ObstacleFactory,
     boss: BossController,
-    cb: CollisionCallbacks
+    cb: CollisionCallbacks,
+    mods?: { deflectRadiusBonus?: number; pickupRadiusMult?: number }
   ): void {
     const playerPos = player.position;
     const playerRadius = 1.55;
-    const deflectRadius = 3.25;
+    const deflectRadius = 3.25 + (mods?.deflectRadiusBonus ?? 0);
+    const pickupMult = mods?.pickupRadiusMult ?? 1.0;
 
     // 1. Projectiles vs Targets
     for (const proj of projectiles.projectiles) {
@@ -110,7 +114,7 @@ export class CollisionSystem {
       }
       if (consumed) continue;
 
-      // Player projectiles vs Boss Parts
+      // Player projectiles vs Boss Parts (supports Octa-Core Sentinel reflected shield shatter!)
       if (boss.active) {
         for (const part of boss.parts) {
           if (!part.alive) continue;
@@ -118,8 +122,16 @@ export class CollisionSystem {
           const r = part.radius + proj.radius;
           if (distSqPointToSegment(_partPos, proj.prevPos, proj.pos) <= r * r) {
             proj.active = false;
-            const res = boss.damagePart(part, proj.damage);
-            cb.onBossPartHit(part, res.pos, res.phaseBreak, res.bossDefeated, res.partDestroyed);
+            const res = boss.damagePart(part, proj.damage, proj.kind === 'reflected_bolt');
+            cb.onBossPartHit(
+              part,
+              res.pos,
+              res.phaseBreak,
+              res.bossDefeated,
+              res.partDestroyed,
+              res.blocked,
+              res.shatteredShield
+            );
             break;
           }
         }
@@ -152,7 +164,7 @@ export class CollisionSystem {
       if (obs.kind === 'boost_ring') {
         if (obs.triggered) continue;
         const dxy = Math.hypot(playerPos.x - pos.x, playerPos.y - pos.y);
-        if (dxy < obs.hitRadius) {
+        if (dxy < obs.hitRadius * pickupMult) {
           obs.triggered = true;
           cb.onBoostRing(obs);
         }
@@ -160,14 +172,14 @@ export class CollisionSystem {
         if (obs.triggered) continue;
         const dx = Math.abs(playerPos.x - pos.x);
         const dy = Math.abs(playerPos.y - pos.y);
-        if (dx < 3.6 * obs.scale && dy < 3.8 * obs.scale) {
+        if (dx < 3.6 * obs.scale * pickupMult && dy < 3.8 * obs.scale * pickupMult) {
           obs.triggered = true;
           cb.onSlalomGate(obs);
         }
       } else if (obs.kind === 'weapon_crate') {
         if (obs.triggered) continue;
         const dxy = Math.hypot(playerPos.x - pos.x, playerPos.y - pos.y);
-        if (dxy < obs.hitRadius + 1.1) {
+        if (dxy < (obs.hitRadius + 1.1) * pickupMult) {
           obs.triggered = true;
           obs.alive = false;
           obs.mesh.visible = false;

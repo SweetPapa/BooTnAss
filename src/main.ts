@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import { Renderer } from './render/Renderer';
 import { GameState } from './engine/GameState';
+import { MetaProgression } from './engine/MetaProgression';
 import { InputManager } from './engine/InputManager';
 import { AudioSynth, type VoicePriority } from './engine/AudioSynth';
 import { ParticlePool } from './engine/ParticlePool';
@@ -118,6 +119,7 @@ const BANTER: Record<string, BanterLine[]> = {
 class StarburstGame {
   private readonly renderer: Renderer;
   private readonly state = new GameState();
+  private readonly meta = new MetaProgression();
   private readonly input = new InputManager();
   private readonly audio = new AudioSynth();
   private readonly particles: ParticlePool;
@@ -168,9 +170,10 @@ class StarburstGame {
   private ambientCycle = 0;
   private attractDist = 0;
 
-  // Charge Lock-On state
+  // Charge Lock-On state (supports Shift/LT OR holding primary Fire for 1.0s!)
   private lockedTargets: HomingTarget[] = [];
   private lockScanCooldown = 0;
+  private fireHoldTimer = 0;
 
   // Loop timing
   private lastTime = performance.now();
@@ -202,6 +205,28 @@ class StarburstGame {
         this.audio.unlock();
         this.state.phase = 'LevelSelect';
         this.hud.renderPhase('LevelSelect', this.state, this.levels);
+      },
+      onOpenHangar: (returnTo) => {
+        this.audio.unlock();
+        this.hud.setHangarReturnTarget(returnTo);
+        this.state.phase = 'Hangar';
+        this.hud.renderPhase('Hangar', this.state, this.levels);
+      },
+      onBuyUpgrade: (key) => {
+        if (this.meta.buyUpgrade(key)) {
+          this.audio.playPowerup();
+          this.input.rumble(0.4, 0.5, 110);
+          this.hud.renderPhase('Hangar', this.state, this.levels);
+        }
+      },
+      onResetSave: () => {
+        this.meta.resetSave();
+        this.audio.playUiConfirm();
+        this.hud.renderPhase('Hangar', this.state, this.levels);
+      },
+      onSelectDifficulty: (diff) => {
+        this.state.difficulty = diff;
+        this.hud.renderPhase('Title', this.state, this.levels);
       },
       onReplayCrawl: () => {
         this.audio.unlock();
@@ -325,6 +350,7 @@ class StarburstGame {
       }
     });
 
+    this.hud.setMetaProgression(this.meta);
     void this.boot();
   }
 
@@ -485,7 +511,7 @@ class StarburstGame {
 
     this.clearEntities();
     this.state.currentLevelIndex = index;
-    this.state.resetLevelStats();
+    this.state.resetLevelStats(this.meta.maxShield);
     this.state.phase = 'Playing';
     this.lowShieldWarned = false;
     this.bossClearDelay = 0;
@@ -496,6 +522,7 @@ class StarburstGame {
     this.ambientHazardTimer = 1.6;
     this.ambientCycle = 0;
     this.lockedTargets = [];
+    this.fireHoldTimer = 0;
 
     // Reset Sector 1 onboarding prompts
     this.sectorElapsedTime = 0;
@@ -516,6 +543,13 @@ class StarburstGame {
     }
 
     this.player.reset();
+    this.player.applyMetaUpgrades({
+      maxShield: this.meta.maxShield,
+      shieldRegenPerSec: this.meta.shieldRegenPerSec,
+      boostDrainMult: this.meta.boostDrainMult,
+      boostRechargeMult: this.meta.boostRechargeMult,
+      barrelRollDurationBonus: this.meta.barrelRollDurationBonus,
+    });
     this.trackCurve.reset();
     this.env.applyEnvironment(level.environment);
     this.timeline = new LevelTimelineDriver(level, startDist);
@@ -588,6 +622,7 @@ class StarburstGame {
   }
 
   private handleBossDefeated(): void {
+    this.state.stats.bossClearTimeSec = Math.max(1, this.boss.fightElapsedSec);
     this.hitstopTimer = 0.11;
     this.state.addBonusScore(4000);
     this.audio.playExplosion(true);
@@ -653,7 +688,26 @@ class StarburstGame {
     );
 
     if (this.state.phase !== 'Playing') {
-      // Allow native Bluetooth Controller A/Start button to navigate Crawl, Title, Pause, LevelClear, GameOver!
+      // 100% Native Gamepad Menu Navigation across Boot, Crawl, Title, Hangar, Sector Select, Pause, Clear, GameOver, Victory!
+      if (input.menuNavX !== 0 || input.menuNavY !== 0) {
+        const delta = input.menuNavY !== 0 ? input.menuNavY : input.menuNavX;
+        if (this.state.phase !== 'Boot' && this.state.phase !== 'Crawl') {
+          this.hud.navigateMenu(delta);
+        }
+      }
+
+      if (input.menuBackPressed) {
+        if (this.state.phase === 'LevelSelect' || this.state.phase === 'Hangar') {
+          this.enterTitle();
+          return;
+        }
+        if (this.state.phase === 'Paused') {
+          this.state.phase = 'Playing';
+          this.hud.removePauseOverlay();
+          return;
+        }
+      }
+
       if (input.menuConfirmPressed) {
         this.audio.unlock();
         if (this.state.phase === 'Boot') {
@@ -662,30 +716,8 @@ class StarburstGame {
         } else if (this.state.phase === 'Crawl') {
           this.enterTitle();
           return;
-        } else if (this.state.phase === 'Title') {
-          this.state.totalCampaignScore = 0;
-          this.bossCheckpointDist = null;
-          this.playCutsceneThen('intro-launch', () => this.startLevel(0, 0));
-          return;
-        } else if (this.state.phase === 'Paused') {
-          this.state.phase = 'Playing';
-          this.hud.removePauseOverlay();
-          return;
-        } else if (this.state.phase === 'GameOver') {
-          if (this.bossCheckpointDist !== null) {
-            this.startLevel(this.state.currentLevelIndex, Math.max(0, this.bossCheckpointDist - 140));
-          } else {
-            this.startLevel(this.state.currentLevelIndex, 0);
-          }
-          return;
-        } else if (this.state.phase === 'LevelClear') {
-          const nextIdx = this.state.currentLevelIndex + 1;
-          if (nextIdx < this.levels.length) this.startLevel(nextIdx, 0);
-          else {
-            this.state.phase = 'Victory';
-            this.hud.renderPhase('Victory', this.state, this.levels);
-          }
-          return;
+        } else {
+          if (this.hud.activateFocusedMenuButton()) return;
         }
       }
 
@@ -840,8 +872,20 @@ class StarburstGame {
       this.audio.playLaser(overdrive || mode !== 'twin');
     }
 
-    // 3. Charge Lock-On Missiles
-    this.updateLockOn(dt, input.chargeLock, input.chargeReleased);
+    // 3. Charge Lock-On Missiles (Hold Shift/LT OR Hold Primary Fire for 1.0s to charge Twin-Boot Homing Missiles!)
+    const prevFireCharged = this.fireHoldTimer >= 1.0;
+    if (input.fire) {
+      this.fireHoldTimer += dt;
+    } else {
+      this.fireHoldTimer = 0;
+    }
+    const fireChargeActive = this.fireHoldTimer >= 1.0;
+    const fireChargeReleased = prevFireCharged && !input.fire;
+    this.updateLockOn(
+      dt,
+      input.chargeLock || fireChargeActive,
+      input.chargeReleased || fireChargeReleased
+    );
 
     // 4. Advance Level Timeline + Escalating Obstacle Intensity (L1/L2 more intense, L3 highest!)
     if (this.timeline && !this.boss.active && this.bossClearDelay <= 0) {
@@ -863,9 +907,10 @@ class StarburstGame {
     this.player.setAccentState(this.state.isOverdrive, this.turboBoostTimer > 0);
     this.hud.setTurboGlow(this.turboBoostTimer > 0);
 
-    // 5. Update World, Enemies, Obstacles, Boss, Projectiles, Particles
+    // 5. Update World, Enemies, Obstacles, Boss, Projectiles, Particles (scaled by Difficulty!)
+    const diffCfg = this.state.difficultyConfig;
     this.env.update(dt, railSpeed, isSuperBoost, this.trackCurve);
-    this.enemies.update(dt, railSpeed, this.player.position, this.projectiles);
+    this.enemies.update(dt, railSpeed, this.player.position, this.projectiles, diffCfg.enemyFireRateMult);
     this.obstacles.update(dt, railSpeed, this.trackCurve);
     this.boss.update(
       dt,
@@ -873,6 +918,8 @@ class StarburstGame {
       this.player.velocity,
       this.projectiles,
       this.enemies,
+      diffCfg.bossAggressionMult,
+      diffCfg.bulletDensityMult,
       () => {
         this.audio.playBossAlarm();
         this.hud.showBanner("I'MMA PUT BOOT N ASS // LASER SWEEP!", 1.8);
@@ -930,12 +977,35 @@ class StarburstGame {
           this.hud.spawnFloatingText(sp.x, sp.y, `SHATTER +${pts}`, '#00ffd5');
           this.screenShake = Math.max(this.screenShake, 0.26);
         },
-        onBossPartHit: (_part, pos, phaseBreak, bossDefeated, partDestroyed) => {
+        onBossPartHit: (_part, pos, phaseBreak, bossDefeated, partDestroyed, blocked, shatteredShield) => {
+          if (blocked) {
+            this.audio.playDeflect();
+            this.particles.burst(pos, 8, 0x00f0ff, 14, 0.7, 0.28);
+            const sp = this.projectToScreen(pos);
+            const hint =
+              this.boss.bossId === 'octa_core_sentinel'
+                ? 'REFLECT ORBS!'
+                : this.boss.bossId === 'solaris_leviathan'
+                  ? 'BLAST SEGMENTS!'
+                  : 'SHIELDED!';
+            this.hud.spawnFloatingText(sp.x, sp.y, hint, '#00f0ff');
+            return;
+          }
+
           this.state.registerHit();
           this.audio.playHitTick();
           this.particles.burst(pos, 8, 0xffd447, 16, 0.8, 0.32);
 
-          if (partDestroyed) {
+          if (shatteredShield) {
+            this.state.addBonusScore(1200);
+            this.audio.playExplosion(true);
+            this.input.rumble(0.85, 0.7, 220);
+            this.particles.burst(pos, 42, 0x00ffd5, 32, 1.6, 0.9);
+            this.particles.spawnShockwave(pos, 0x00ffd5, 16, 0.52);
+            const sp = this.projectToScreen(pos);
+            this.hud.spawnFloatingText(sp.x, sp.y, 'PRISM SHATTERED!! +1200', '#00ffd5');
+            this.screenShake = Math.max(this.screenShake, 0.85);
+          } else if (partDestroyed) {
             this.state.addBonusScore(800);
             this.audio.playExplosion(true);
             this.input.rumble(0.7, 0.5, 200);
@@ -963,7 +1033,8 @@ class StarburstGame {
             this.handleBossDefeated();
           }
         },
-        onPlayerDamaged: (_amt, pos, source) => {
+        onPlayerDamaged: (amt, pos, source) => {
+          this.state.stats.hullDamageTaken += amt;
           this.state.resetCombo();
           this.audio.playPlayerHit();
           this.input.rumble(0.85, 0.65, 220);
@@ -999,24 +1070,32 @@ class StarburstGame {
           this.particles.spawnShockwave(proj.pos, 0x00f0ff, 5.5, 0.25);
 
           const reflectDir = this.getAimAssistedDirection();
-          this.projectiles.spawnPlayerBolt(proj.pos, reflectDir, true, true);
+          this.projectiles.spawnPlayerBolt(
+            proj.pos,
+            reflectDir,
+            true,
+            true,
+            this.meta.reflectedDamageMult
+          );
           const sp = this.projectToScreen(proj.pos);
           this.hud.spawnFloatingText(sp.x, sp.y, 'DEFLECT!', '#00f0ff');
           this.playCategoryBanter('barrelRoll', 3.4, false, 0.35);
         },
         onBoostRing: (obs) => {
           this.state.stats.ringsCollected += 1;
-          this.player.heal(15);
+          const healAmt = this.state.difficultyConfig.ringHealAmount;
+          this.player.heal(healAmt);
           this.lowShieldWarned = this.player.shield <= 30;
           const pts = this.state.addBonusScore(300);
           this.audio.playRingPickup();
           this.particles.burst(obs.mesh.position, 18, 0xffd447, 16, 0.9, 0.5);
           this.particles.spawnShockwave(obs.mesh.position, 0xffd447, 9, 0.38);
           const sp = this.projectToScreen(obs.mesh.position);
-          this.hud.spawnFloatingText(sp.x, sp.y, `SHIELD +15% // +${pts}`, '#ffd447');
+          this.hud.spawnFloatingText(sp.x, sp.y, `SHIELD +${healAmt} // +${pts}`, '#ffd447');
           this.playCategoryBanter('ringPickup', 3.0, false, 0.35);
         },
         onSlalomGate: (obs) => {
+          this.state.stats.turboGatesHit += 1;
           this.turboBoostTimer = 1.5;
           this.player.heal(8);
           const pts = this.state.addBonusScore(500);
@@ -1034,13 +1113,14 @@ class StarburstGame {
           this.input.rumble(0.45, 0.6, 150);
           this.particles.burst(obs.mesh.position, 26, 0xd946ff, 22, 1.1, 0.55);
           this.particles.spawnShockwave(obs.mesh.position, 0xd946ff, 12, 0.42);
+          const dur = this.meta.weaponDurationSec;
           const pick = Math.floor(Math.random() * 3);
           if (pick === 0) {
-            this.player.grantWeaponUpgrade('spread', 15);
+            this.player.grantWeaponUpgrade('spread', dur);
             this.hud.showBanner('UPGRADE // 5-WAY SPREAD LASER!', 2.2);
             this.hud.showComms('mechanic', 'Zorp special! 5-Way Spread Laser installed—fry those tin cans!', 3.2);
           } else if (pick === 1) {
-            this.player.grantWeaponUpgrade('gatling', 15);
+            this.player.grantWeaponUpgrade('gatling', dur);
             this.hud.showBanner('UPGRADE // HYPER GATLING CANNONS!', 2.2);
             this.hud.showComms('mechanic', 'Hyper Gatling online! Hold the trigger and watch the fireworks!', 3.2);
           } else {
@@ -1049,6 +1129,10 @@ class StarburstGame {
             this.hud.showComms('mechanic', 'Fresh Nova Smart Bomb loaded! Press B or X to clear the whole screen!', 3.2);
           }
         },
+      },
+      {
+        deflectRadiusBonus: this.meta.deflectRadiusBonus,
+        pickupRadiusMult: this.meta.pickupRadiusMult,
       }
     );
 
@@ -1057,7 +1141,9 @@ class StarburstGame {
       this.bossClearDelay -= dt;
       if (this.bossClearDelay <= 0 && this.state.phase === 'Playing') {
         this.state.stats.shieldRemaining = this.player.shield;
-        const { totalLevelScore } = this.state.computeRank();
+        const { totalLevelScore, bootBucksEarned } = this.state.computeRank();
+        this.state.stats.bootBucksEarned = bootBucksEarned;
+        this.meta.addBootBucks(bootBucksEarned);
         this.state.totalCampaignScore += totalLevelScore;
 
         const isFinalSector = this.state.currentLevelIndex >= this.levels.length - 1;
@@ -1306,7 +1392,8 @@ class StarburstGame {
 
     if (charging) {
       this.lockScanCooldown -= dt;
-      if (this.lockScanCooldown <= 0 && this.lockedTargets.length < 4) {
+      const maxLocks = this.meta.maxLockTargets;
+      if (this.lockScanCooldown <= 0 && this.lockedTargets.length < maxLocks) {
         const candidate = this.findNextLockCandidate();
         if (candidate) {
           this.lockedTargets.push(candidate);

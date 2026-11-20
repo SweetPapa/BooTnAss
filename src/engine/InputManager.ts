@@ -17,6 +17,9 @@ export interface InputState {
   mouseNdcY: number;
   pausePressed: boolean;
   menuConfirmPressed: boolean;
+  menuBackPressed: boolean;
+  menuNavX: -1 | 0 | 1;
+  menuNavY: -1 | 0 | 1;
   skipHeld: boolean;
   gamepadConnected: boolean;
   gamepadName: string;
@@ -37,6 +40,8 @@ export class InputManager {
   private novaBombQueued = false;
   private pauseQueued = false;
   private menuConfirmQueued = false;
+  private menuBackQueued = false;
+  private menuNavCooldown = 0;
 
   // Gamepad state & universal profile mapping
   private prevPadButtons: boolean[] = [];
@@ -307,6 +312,14 @@ export class InputManager {
     let menuConfirmPressed = this.menuConfirmQueued;
     this.menuConfirmQueued = false;
 
+    let menuBackPressed = this.menuBackQueued;
+    this.menuBackQueued = false;
+
+    let menuNavX: -1 | 0 | 1 = 0;
+    let menuNavY: -1 | 0 | 1 = 0;
+
+    if (this.menuNavCooldown > 0) this.menuNavCooldown -= 1 / 60;
+
     let skipHeld =
       this.keys.has('Space') ||
       this.keys.has('Escape') ||
@@ -382,7 +395,24 @@ export class InputManager {
 
       if (freshBtn(startIdx)) pausePressed = true;
       if (freshBtn(fireBtnIdx) || freshBtn(startIdx)) menuConfirmPressed = true;
+      if (freshBtn(lockBtnIdx)) menuBackPressed = true;
       if (btn(fireBtnIdx) || btn(startIdx)) skipHeld = true;
+
+      if (this.menuNavCooldown <= 0) {
+        if (moveX > 0.55) {
+          menuNavX = 1;
+          this.menuNavCooldown = 0.2;
+        } else if (moveX < -0.55) {
+          menuNavX = -1;
+          this.menuNavCooldown = 0.2;
+        } else if (moveY > 0.55) {
+          menuNavY = -1; // Up in UI list
+          this.menuNavCooldown = 0.2;
+        } else if (moveY < -0.55) {
+          menuNavY = 1; // Down in UI list
+          this.menuNavCooldown = 0.2;
+        }
+      }
 
       this.prevPadButtons = pad.buttons.map((_, idx) => btn(idx));
     } else {
@@ -415,6 +445,9 @@ export class InputManager {
       mouseNdcY: this.mouseNdcY,
       pausePressed,
       menuConfirmPressed,
+      menuBackPressed,
+      menuNavX,
+      menuNavY,
       skipHeld,
       gamepadConnected: this.gamepadConnected,
       gamepadName: this.gamepadName,

@@ -1,7 +1,8 @@
-import type { GamePhase, GameState } from '../engine/GameState';
+import { DIFFICULTIES, type DifficultyId, type GamePhase, type GameState } from '../engine/GameState';
 import type { LevelConfig } from '../levels/LevelSchema';
 import type { LevelLoadError } from '../levels/LevelLoader';
 import { Leaderboard } from '../engine/Leaderboard';
+import { UPGRADE_DEFS, type MetaProgression, type UpgradeKey } from '../engine/MetaProgression';
 
 export interface StoryCrawlData {
   episode: string;
@@ -16,6 +17,10 @@ export interface HudCallbacks {
   onCrawlFinished: () => void;
   onStartCampaign: () => void;
   onOpenLevelSelect: () => void;
+  onOpenHangar: (returnTo: 'Title' | 'NextSector') => void;
+  onBuyUpgrade: (key: UpgradeKey) => void;
+  onResetSave: () => void;
+  onSelectDifficulty: (diff: DifficultyId) => void;
   onReplayCrawl: () => void;
   onSelectLevel: (index: number) => void;
   onBackToTitle: () => void;
@@ -255,6 +260,51 @@ export class HUD {
   private hasBossCheckpoint = false;
   private controllerLabel = 'NO CONTROLLER DETECTED (PRESS ANY PAD BUTTON)';
   private nintendoLayout = false;
+  private focusedButtonIdx = 0;
+  private hangarReturnTarget: 'Title' | 'NextSector' = 'Title';
+  private metaRef: MetaProgression | null = null;
+
+  public setMetaProgression(meta: MetaProgression): void {
+    this.metaRef = meta;
+  }
+
+  public setHangarReturnTarget(target: 'Title' | 'NextSector'): void {
+    this.hangarReturnTarget = target;
+  }
+
+  /**
+   * 100% Gamepad Navigation across EVERY menu screen!
+   */
+  public navigateMenu(delta: number): void {
+    const buttons = Array.from(
+      this.root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+    );
+    if (buttons.length === 0) return;
+    buttons.forEach((b) => b.classList.remove('gamepad-focus'));
+    this.focusedButtonIdx = (this.focusedButtonIdx + delta + buttons.length) % buttons.length;
+    const target = buttons[this.focusedButtonIdx];
+    target.classList.add('gamepad-focus');
+    target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    this.cb.onUiHover();
+  }
+
+  public activateFocusedMenuButton(): boolean {
+    const buttons = Array.from(
+      this.root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+    );
+    if (buttons.length === 0) return false;
+    const idx = Math.min(Math.max(0, this.focusedButtonIdx), buttons.length - 1);
+    const target = buttons[idx];
+    if (!target) return false;
+    target.click();
+    return true;
+  }
+
+  private resetMenuFocus(): void {
+    this.focusedButtonIdx = 0;
+    const first = this.root.querySelector<HTMLButtonElement>('button:not(:disabled)');
+    if (first) first.classList.add('gamepad-focus');
+  }
 
   public setBossCheckpoint(active: boolean): void {
     this.hasBossCheckpoint = active;
@@ -392,6 +442,11 @@ export class HUD {
       return;
     }
 
+    if (phase === 'Hangar') {
+      this.renderHangar(state);
+      return;
+    }
+
     if (phase === 'Playing') {
       this.mountPlayingHud(state, levels[state.currentLevelIndex]);
       return;
@@ -474,14 +529,23 @@ export class HUD {
   }
 
   private renderTitle(state: GameState): void {
+    const diffCfg = state.difficultyConfig;
+    const bucks = this.metaRef ? this.metaRef.data.bootBucks : 0;
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
         <div class="title-hero-card">
           <div class="game-logo">BOOT N ASS</div>
-          <div class="game-tagline">ON-RAILS NEON ARCADE SHOOTER</div>
-          <div class="menu-actions">
+          <div class="game-tagline" style="margin-bottom:14px;">ON-RAILS NEON ARCADE SHOOTER &nbsp;•&nbsp; ${bucks.toLocaleString()} BB</div>
+          <div class="difficulty-bar">
+            <button class="diff-pill ${state.difficulty === 'rookie' ? 'active' : ''}" data-diff="rookie">ROOKIE</button>
+            <button class="diff-pill ${state.difficulty === 'ace' ? 'active' : ''}" data-diff="ace">ACE ★</button>
+            <button class="diff-pill ${state.difficulty === 'maximum' ? 'active' : ''}" data-diff="maximum">MAXIMUM BOOT-N-ASS</button>
+          </div>
+          <div class="diff-desc">${this.escapeHtml(diffCfg.description)}</div>
+          <div class="menu-actions" style="margin-bottom:16px;">
             <button id="btn-start" class="neon-btn">LAUNCH CAMPAIGN</button>
+            <button id="btn-hangar" class="neon-btn secondary">HANGAR (${bucks} BB)</button>
             <button id="btn-levels" class="neon-btn secondary">SELECT SECTOR</button>
             <button id="btn-leaderboard" class="neon-btn secondary">LEADERBOARD</button>
             <button id="btn-story" class="neon-btn secondary">OPENING CRAWL</button>
@@ -518,7 +582,14 @@ export class HUD {
       </div>
     `;
 
+    this.root.querySelectorAll<HTMLButtonElement>('.diff-pill').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const d = btn.dataset.diff as DifficultyId;
+        if (d) this.cb.onSelectDifficulty(d);
+      });
+    });
     document.getElementById('btn-start')?.addEventListener('click', () => this.cb.onStartCampaign());
+    document.getElementById('btn-hangar')?.addEventListener('click', () => this.cb.onOpenHangar('Title'));
     document.getElementById('btn-levels')?.addEventListener('click', () => this.cb.onOpenLevelSelect());
     document.getElementById('btn-leaderboard')?.addEventListener('click', () => this.renderLeaderboardModal(state));
     document.getElementById('btn-story')?.addEventListener('click', () => this.cb.onReplayCrawl());
@@ -531,6 +602,94 @@ export class HUD {
       if (el) el.textContent = msg;
     });
     this.bindArcadeButtonJuice();
+    // Default gamepad focus to LAUNCH CAMPAIGN
+    const launchBtn = document.getElementById('btn-start') as HTMLButtonElement | null;
+    if (launchBtn) {
+      const all = Array.from(this.root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+      this.focusedButtonIdx = Math.max(0, all.indexOf(launchBtn));
+      launchBtn.classList.add('gamepad-focus');
+    }
+  }
+
+  private renderHangar(state: GameState): void {
+    const meta = this.metaRef;
+    if (!meta) return;
+    const bucks = meta.data.bootBucks;
+
+    const cards = UPGRADE_DEFS.map((u) => {
+      const tier = meta.getTier(u.key);
+      const nextCost = meta.getNextCost(u.key);
+      const canBuy = nextCost !== null && bucks >= nextCost;
+      const pips = [0, 1, 2]
+        .map((i) => `<span class="tier-pip ${i < tier ? 'filled' : ''}"></span>`)
+        .join('');
+      const nextLabel = nextCost === null ? 'MAXED OUT' : u.tierDesc[tier];
+      const costLabel = nextCost === null ? '★ MAX ★' : `${nextCost} BB`;
+
+      return `
+        <button class="upgrade-card" data-upgrade="${u.key}" ${!canBuy ? 'disabled' : ''}>
+          <div>
+            <div class="upgrade-card-top">
+              <span class="upgrade-name">${u.name}</span>
+              <div class="tier-pips">${pips}</div>
+            </div>
+            <div class="upgrade-tagline">${u.tagline}</div>
+          </div>
+          <div class="upgrade-footer">
+            <span class="upgrade-next">${nextLabel}</span>
+            <span class="upgrade-cost">${costLabel}</span>
+          </div>
+        </button>
+      `;
+    }).join('');
+
+    const continueBtn =
+      this.hangarReturnTarget === 'NextSector'
+        ? '<button id="btn-hangar-next" class="neon-btn">LAUNCH NEXT SECTOR</button>'
+        : '<button id="btn-hangar-back" class="neon-btn">BACK TO BRIDGE</button>';
+
+    this.root.innerHTML = `
+      <div class="menu-screen interactive">
+        <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
+        <div class="hangar-wrap">
+          <div class="hangar-header">
+            <div class="hangar-zorp">
+              <img src="/assets/art/portrait-shop.jpg" alt="Zorp" />
+              <div>
+                <div style="font-family:var(--font-display);font-size:1.35rem;font-weight:900;color:var(--cyan);letter-spacing:0.15em;">ZORP'S HANGAR // SHIP UPGRADES</div>
+                <div style="color:rgba(232,246,255,0.78);font-size:0.95rem;">Spend Boot Bucks to permanently upgrade Vanguard-X across runs!</div>
+              </div>
+            </div>
+            <div class="boot-bucks-badge">BOOT BUCKS: ${bucks.toLocaleString()} BB</div>
+          </div>
+          <div class="hangar-grid">${cards}</div>
+          <div class="menu-actions" style="margin-bottom:0;justify-content:space-between;">
+            <button id="btn-reset-save" class="neon-btn small secondary" style="border-color:var(--crimson);color:#ff99aa;">RESET SAVE</button>
+            <div style="display:flex;gap:12px;">
+              ${continueBtn}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    this.root.querySelectorAll<HTMLButtonElement>('.upgrade-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        const key = card.dataset.upgrade as UpgradeKey;
+        if (key) this.cb.onBuyUpgrade(key);
+      });
+    });
+
+    document.getElementById('btn-hangar-next')?.addEventListener('click', () => this.cb.onNextLevel());
+    document.getElementById('btn-hangar-back')?.addEventListener('click', () => this.cb.onBackToTitle());
+    document.getElementById('btn-reset-save')?.addEventListener('click', () => {
+      if (window.confirm('Reset all Boot Bucks and Hangar upgrades back to Tier 0?')) {
+        this.cb.onResetSave();
+      }
+    });
+    this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
+    void state;
   }
 
   private renderLevelSelect(levels: LevelConfig[]): void {
@@ -879,36 +1038,50 @@ export class HUD {
   }
 
   private renderLevelClear(state: GameState, levels: LevelConfig[]): void {
-    const { rank, shieldBonus, totalLevelScore } = state.computeRank();
+    const breakdown = state.computeRank();
     const hasNext = state.currentLevelIndex + 1 < levels.length;
     const lvl = levels[state.currentLevelIndex];
 
+    const criteriaHtml = breakdown.criteria
+      .map(
+        (c) => `
+        <div class="srank-item ${c.passed ? 'pass' : 'fail'}">
+          <span>${c.passed ? '✓' : '✗'} ${c.label} (${c.target})</span>
+          <span style="font-family:var(--font-display);">${c.actual}</span>
+        </div>`
+      )
+      .join('');
+
     this.root.innerHTML = `
       <div class="menu-screen interactive">
-        <div class="tally-card">
+        <div class="tally-card" style="max-width:600px;">
           <div class="tally-title">SECTOR CLEAR</div>
-          <div style="color:var(--gold);letter-spacing:0.2em;margin-bottom:6px;">${this.escapeHtml(lvl.name)}</div>
-          <div class="tally-rank">${rank}</div>
-          <div class="tally-rows">
+          <div style="color:var(--gold);letter-spacing:0.2em;margin-bottom:4px;">${this.escapeHtml(lvl.name)} &nbsp;•&nbsp; ${state.difficultyConfig.shortBadge}</div>
+          <div class="tally-rank">${breakdown.rank}</div>
+          <div class="tally-rows" style="margin-bottom:10px;">
             <div class="tally-row"><span>COMBAT SCORE</span><span>${state.stats.score.toLocaleString()}</span></div>
-            <div class="tally-row"><span>ACCURACY</span><span>${state.getAccuracyPercent()}%</span></div>
-            <div class="tally-row"><span>MAX COMBO</span><span>${state.stats.maxCombo}x</span></div>
-            <div class="tally-row"><span>DEFLECTIONS</span><span>${state.stats.deflections}</span></div>
-            <div class="tally-row"><span>SHIELD BONUS (${Math.round(state.stats.shieldRemaining)}%)</span><span>+${shieldBonus.toLocaleString()}</span></div>
-            <div class="tally-row" style="font-weight:700;"><span>SECTOR TOTAL</span><span>${totalLevelScore.toLocaleString()}</span></div>
+            <div class="tally-row"><span>SHIELD BONUS</span><span>+${breakdown.shieldBonus.toLocaleString()}</span></div>
+            <div class="tally-row" style="font-weight:700;"><span>SECTOR TOTAL</span><span>${breakdown.totalLevelScore.toLocaleString()}</span></div>
+            <div class="tally-row" style="color:var(--gold);font-weight:700;"><span>BOOT BUCKS EARNED</span><span>+${breakdown.bootBucksEarned.toLocaleString()} BB</span></div>
+          </div>
+          <div class="srank-checklist">
+            <div class="srank-title">S-RANK TARGET BREAKDOWN</div>
+            ${criteriaHtml}
           </div>
           <div class="menu-actions" style="margin-bottom:0;">
-            ${hasNext ? '<button id="btn-next" class="neon-btn">NEXT SECTOR</button>' : '<button id="btn-next" class="neon-btn">VIEW VICTORY</button>'}
+            ${hasNext ? '<button id="btn-clear-hangar" class="neon-btn">HANGAR UPGRADES</button>' : ''}
+            ${hasNext ? '<button id="btn-next" class="neon-btn secondary">NEXT SECTOR</button>' : '<button id="btn-next" class="neon-btn">VIEW VICTORY</button>'}
             <button id="btn-retry" class="neon-btn secondary">REPLAY</button>
-            <button id="btn-menu" class="neon-btn secondary">BRIDGE</button>
           </div>
         </div>
       </div>
     `;
 
+    document.getElementById('btn-clear-hangar')?.addEventListener('click', () => this.cb.onOpenHangar('NextSector'));
     document.getElementById('btn-next')?.addEventListener('click', () => this.cb.onNextLevel());
     document.getElementById('btn-retry')?.addEventListener('click', () => this.cb.onRetryLevel());
-    document.getElementById('btn-menu')?.addEventListener('click', () => this.cb.onBackToTitle());
+    this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   private renderGameOver(state: GameState): void {
@@ -1018,7 +1191,12 @@ export class HUD {
       if (saved) return;
       saved = true;
       const initials = inputEl?.value.trim() || 'ACE';
-      Leaderboard.saveScore(initials, state.totalCampaignScore, campaignRank, 'ARCADE');
+      Leaderboard.saveScore(
+        initials,
+        state.totalCampaignScore,
+        campaignRank,
+        state.difficultyConfig.shortBadge
+      );
       if (lbWrap) lbWrap.innerHTML = this.renderLeaderboardTableHtml();
       const form = document.getElementById('initials-form');
       if (form) {

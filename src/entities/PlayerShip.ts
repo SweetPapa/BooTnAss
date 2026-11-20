@@ -20,6 +20,12 @@ export class PlayerShip {
   public isBoosting = false;
   public isBraking = false;
 
+  // Meta-upgrade modifiers applied from Hangar
+  private boostDrainMult = 1.0;
+  private boostRechargeMult = 1.0;
+  private shieldRegenPerSec = 0;
+  private timeSinceDamage = 99;
+
   // Barrel roll state
   public barrelRollTimer = 0;
   private barrelRollDuration = 0.45;
@@ -285,11 +291,27 @@ export class PlayerShip {
     this.novaBombs = Math.min(5, this.novaBombs + 1);
   }
 
+  public applyMetaUpgrades(opts: {
+    maxShield: number;
+    shieldRegenPerSec: number;
+    boostDrainMult: number;
+    boostRechargeMult: number;
+    barrelRollDurationBonus: number;
+  }): void {
+    this.maxShield = opts.maxShield;
+    this.shield = opts.maxShield;
+    this.shieldRegenPerSec = opts.shieldRegenPerSec;
+    this.boostDrainMult = opts.boostDrainMult;
+    this.boostRechargeMult = opts.boostRechargeMult;
+    this.barrelRollDuration = 0.45 + opts.barrelRollDurationBonus;
+  }
+
   public takeDamage(amount: number): boolean {
     if (this.isInvulnerable) return false;
     this.shield = Math.max(0, this.shield - amount);
     this.hitInvulnTimer = 0.75;
     this.damageFlashTimer = 0.25;
+    this.timeSinceDamage = 0;
     return true;
   }
 
@@ -351,22 +373,28 @@ export class PlayerShip {
       }
     }
 
-    // Boost & Brake
+    // Boost & Brake (modified by Turbo Boots Hangar upgrade!)
     const prevBoost = this.isBoosting;
     if (input.boost && this.boostMeter > 4) {
       this.isBoosting = true;
       this.isBraking = false;
-      this.boostMeter = Math.max(0, this.boostMeter - 42 * dt);
+      this.boostMeter = Math.max(0, this.boostMeter - 42 * this.boostDrainMult * dt);
     } else if (input.brake && this.boostMeter > 4) {
       this.isBraking = true;
       this.isBoosting = false;
-      this.boostMeter = Math.max(0, this.boostMeter - 26 * dt);
+      this.boostMeter = Math.max(0, this.boostMeter - 26 * this.boostDrainMult * dt);
     } else {
       this.isBoosting = false;
       this.isBraking = false;
-      this.boostMeter = Math.min(100, this.boostMeter + 18 * dt);
+      this.boostMeter = Math.min(100, this.boostMeter + 18 * this.boostRechargeMult * dt);
     }
     const startedBoost = !prevBoost && this.isBoosting;
+
+    // Hull Plating passive regen between waves (after 4s without damage)
+    this.timeSinceDamage += dt;
+    if (this.shieldRegenPerSec > 0 && this.timeSinceDamage >= 4.0 && this.shield > 0 && this.shield < this.maxShield) {
+      this.shield = Math.min(this.maxShield, this.shield + this.shieldRegenPerSec * dt);
+    }
 
     if (this.hitInvulnTimer > 0) this.hitInvulnTimer -= dt;
     if (this.damageFlashTimer > 0) this.damageFlashTimer -= dt;

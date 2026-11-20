@@ -1127,6 +1127,229 @@ body,
   box-shadow: 0 0 24px rgba(255, 212, 71, 0.55);
 }
 
+/* ==================== GAMEPAD MENU FOCUS RING ==================== */
+.gamepad-focus,
+button:focus-visible {
+  outline: 3px solid var(--gold) !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 30px rgba(255, 212, 71, 0.75), 0 0 16px rgba(0, 240, 255, 0.65) !important;
+  transform: translateY(-2px) scale(1.03);
+}
+
+/* ==================== DIFFICULTY SELECTOR ==================== */
+.difficulty-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.diff-pill {
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  padding: 9px 16px;
+  color: rgba(232, 246, 255, 0.75);
+  background: rgba(6, 14, 32, 0.78);
+  border: 1.5px solid rgba(0, 240, 255, 0.3);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.diff-pill:hover {
+  border-color: var(--cyan);
+  color: #fff;
+}
+
+.diff-pill.active {
+  color: #060916;
+  background: linear-gradient(135deg, var(--gold), #ff9922);
+  border-color: #fff;
+  box-shadow: 0 0 24px rgba(255, 212, 71, 0.65);
+}
+
+.diff-desc {
+  font-size: 0.92rem;
+  color: var(--cyan);
+  margin-bottom: 18px;
+  letter-spacing: 0.06em;
+}
+
+/* ==================== HANGAR & META-UPGRADES ==================== */
+.hangar-wrap {
+  width: min(1040px, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: rgba(5, 11, 26, 0.9);
+  border: 2px solid var(--cyan);
+  border-radius: 10px;
+  padding: 22px 26px;
+  box-shadow: 0 0 46px rgba(0, 240, 255, 0.28);
+  backdrop-filter: blur(10px);
+  z-index: 2;
+}
+
+.hangar-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1.5px solid rgba(0, 240, 255, 0.3);
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+
+.hangar-zorp {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hangar-zorp img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 2px solid var(--gold);
+  object-fit: cover;
+}
+
+.boot-bucks-badge {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(255, 212, 71, 0.75);
+  padding: 8px 18px;
+  background: rgba(255, 212, 71, 0.12);
+  border: 1.5px solid var(--gold);
+  border-radius: 6px;
+}
+
+.hangar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.upgrade-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: left;
+  padding: 14px 16px;
+  background: rgba(8, 18, 42, 0.82);
+  border: 1.5px solid rgba(0, 240, 255, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #eef9ff;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.upgrade-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+  border-color: var(--gold);
+  box-shadow: 0 0 24px rgba(255, 212, 71, 0.4);
+}
+
+.upgrade-card:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.upgrade-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.upgrade-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.tier-pips {
+  display: flex;
+  gap: 5px;
+}
+
+.tier-pip {
+  width: 14px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+}
+
+.tier-pip.filled {
+  background: var(--gold);
+  border-color: #fff;
+  box-shadow: 0 0 10px var(--gold);
+}
+
+.upgrade-tagline {
+  font-size: 0.88rem;
+  color: rgba(232, 246, 255, 0.78);
+  margin-bottom: 10px;
+}
+
+.upgrade-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+}
+
+.upgrade-next {
+  color: var(--cyan);
+}
+
+.upgrade-cost {
+  color: var(--gold);
+  font-weight: 800;
+}
+
+/* ==================== S-RANK CHECKLIST ==================== */
+.srank-checklist {
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  background: rgba(4, 12, 28, 0.78);
+  border: 1px solid rgba(0, 240, 255, 0.32);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.srank-title {
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+.srank-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.92rem;
+  padding: 3px 0;
+}
+
+.srank-item.pass {
+  color: #7dffb3;
+}
+
+.srank-item.fail {
+  color: #ff8c9e;
+}
+
 /* ==================== BIG ARCADE BOOT START SCREEN ==================== */
 .boot-start-btn {
   font-family: var(--font-display);

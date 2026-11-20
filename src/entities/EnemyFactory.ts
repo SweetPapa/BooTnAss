@@ -271,7 +271,8 @@ export class EnemyFactory {
     dt: number,
     railSpeed: number,
     playerPos: THREE.Vector3,
-    projectiles: ProjectilePool
+    projectiles: ProjectilePool,
+    fireRateMult = 1.0
   ): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -325,7 +326,7 @@ export class EnemyFactory {
       }
 
       if (e.fireRate > 0 && pos.z > -135 && pos.z < -18) {
-        e.fireTimer -= dt;
+        e.fireTimer -= dt * fireRateMult;
         if (e.fireTimer <= 0) {
           e.fireTimer = 1 / e.fireRate;
           const dir = new THREE.Vector3().subVectors(playerPos, pos).normalize();

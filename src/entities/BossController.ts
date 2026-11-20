@@ -12,12 +12,20 @@ export interface BossPart extends HomingTarget {
   radius: number;
   alive: boolean;
   isCore: boolean;
+  isReflectShield?: boolean; // Octa-Core Sentinel prism shields (block normal shots, shatter on reflected shots!)
+  isSerpentSegment?: boolean; // Solaris Leviathan body segments
   hitFlashTimer: number;
   originalMats: Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
 }
 
 const WHITE_MAT = new THREE.MeshBasicMaterial({
-  color: new THREE.Color(0xffffff).multiplyScalar(3.6),
+  color: new THREE.Color(0xffffff).multiplyScalar(3.4),
+  toneMapped: false,
+});
+
+const SHIELD_BLOCK_MAT = new THREE.MeshBasicMaterial({
+  color: new THREE.Color(0x00f0ff).multiplyScalar(2.8),
+  wireframe: true,
   toneMapped: false,
 });
 
@@ -31,10 +39,11 @@ export class BossController {
   public maxPhases = 2;
   public totalHp = 0;
   public maxTotalHp = 950;
+  public fightElapsedSec = 0;
   public readonly root = new THREE.Group();
   public readonly parts: BossPart[] = [];
 
-  // Dual-axis Sweeping Laser Beam (Horizontal or Vertical!)
+  // Sweeping Laser Beam
   public sweepBeamActive = false;
   public sweepAxis: 'horizontal' | 'vertical' = 'horizontal';
   public sweepBeamPos = 0;
@@ -43,22 +52,25 @@ export class BossController {
   private sweepBeamTimer = 0;
   private sweepDuration = 2.0;
 
-  // Telegraph Charge Orb before big attacks
+  // Telegraph Charge Orb
   private chargeOrb: THREE.Mesh | null = null;
   private chargeTimer = 0;
   private pendingAttack: (() => void) | null = null;
 
-  // Boss-specific animated sub-parts
+  // Boss-specific animated visual elements
   private blastDoorLeft: THREE.Mesh | null = null;
   private blastDoorRight: THREE.Mesh | null = null;
+  private coreShieldDome: THREE.Mesh | null = null; // Aegis core shield projected by the 2 wing turrets
   private haloRings: THREE.Object3D[] = [];
   private serpentSegments: THREE.Object3D[] = [];
+  private serpentMats: THREE.MeshStandardMaterial[] = [];
+  private destroyedSegmentsCount = 0;
 
   private readonly scene: THREE.Scene;
   private age = 0;
   private attackTimer = 1.4;
   private spiralCounter = 0;
-  private droneTimer = 4.5;
+  private droneTimer = 5.0;
   private entered = false;
 
   constructor(scene: THREE.Scene) {
@@ -74,14 +86,16 @@ export class BossController {
     this.maxPhases = ev.phases;
     this.maxTotalHp = ev.hp;
     this.totalHp = ev.hp;
+    this.fightElapsedSec = 0;
     this.age = 0;
     this.attackTimer = 1.4;
     this.spiralCounter = 0;
-    this.droneTimer = 4.5;
+    this.droneTimer = 5.0;
     this.entered = false;
     this.sweepBeamActive = false;
     this.chargeTimer = 0;
     this.pendingAttack = null;
+    this.destroyedSegmentsCount = 0;
 
     this.root.position.set(0, 2.0, -185);
     this.root.rotation.set(0, 0, 0);
@@ -95,9 +109,9 @@ export class BossController {
       this.buildSolarisLeviathan(ev.hp);
     }
 
-    // Telegraphing charge-up orb in front of boss core
+    // Telegraphing charge-up orb
     const chargeMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xffd447).multiplyScalar(3.8),
+      color: new THREE.Color(0xffd447).multiplyScalar(3.4),
       transparent: true,
       opacity: 0.9,
       toneMapped: false,
@@ -109,7 +123,7 @@ export class BossController {
 
     // Sweeping beam mesh
     const beamMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xff2a85).multiplyScalar(3.6),
+      color: new THREE.Color(0xff2a55).multiplyScalar(3.2),
       transparent: true,
       opacity: 0.92,
       toneMapped: false,
@@ -124,7 +138,8 @@ export class BossController {
     mesh: THREE.Object3D,
     hp: number,
     radius: number,
-    isCore: boolean
+    isCore: boolean,
+    extras?: { isReflectShield?: boolean; isSerpentSegment?: boolean }
   ): BossPart {
     const originalMats = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
     mesh.traverse((obj) => {
@@ -141,6 +156,8 @@ export class BossController {
       radius,
       alive: true,
       isCore,
+      isReflectShield: extras?.isReflectShield,
+      isSerpentSegment: extras?.isSerpentSegment,
       hitFlashTimer: 0,
       originalMats,
       getPosition(out: THREE.Vector3) {
@@ -152,43 +169,47 @@ export class BossController {
     return part;
   }
 
+  /**
+   * SECTOR 1 — AEGIS DREADNOUGHT
+   * Two heavy destructible wing turrets (Left/Right) projecting a glowing shield dome over the core.
+   * Core takes 25% damage until BOTH wing turrets are destroyed, then opens for 100% damage + horizontal sweeping laser!
+   */
   private buildAegisDreadnought(totalHp: number): void {
     const hullMat = new THREE.MeshStandardMaterial({
-      color: 0x161d38,
-      metalness: 0.65,
-      roughness: 0.3,
+      color: 0x263152,
+      metalness: 0.55,
+      roughness: 0.32,
       flatShading: true,
     });
     const darkArmor = new THREE.MeshStandardMaterial({
-      color: 0x0c1022,
-      metalness: 0.75,
-      roughness: 0.25,
+      color: 0x11172b,
+      metalness: 0.65,
+      roughness: 0.28,
       flatShading: true,
     });
     const cyanTrim = new THREE.MeshStandardMaterial({
       color: 0x00f0ff,
       emissive: new THREE.Color(0x00f0ff),
-      emissiveIntensity: 3.0,
+      emissiveIntensity: 2.6,
       flatShading: true,
     });
     const crimsonGlow = new THREE.MeshStandardMaterial({
-      color: 0xff2a85,
-      emissive: new THREE.Color(0xff2a85),
-      emissiveIntensity: 3.5,
+      color: 0xff3344,
+      emissive: new THREE.Color(0xff2a55),
+      emissiveIntensity: 3.0,
       flatShading: true,
     });
     const solarCore = new THREE.MeshStandardMaterial({
       color: 0xffd447,
       emissive: new THREE.Color(0xffaa00),
-      emissiveIntensity: 4.0,
+      emissiveIntensity: 3.6,
       flatShading: true,
     });
 
-    // Colossal twin-deck battlecruiser chassis
+    // Twin-deck battlecruiser hull
     const mainDeck = new THREE.Mesh(new THREE.BoxGeometry(22, 3.6, 9), hullMat);
     this.root.add(mainDeck);
 
-    // Swept forward battle-wings
     for (const side of [-1, 1]) {
       const wing = new THREE.Mesh(new THREE.BoxGeometry(8.5, 1.4, 7.5), darkArmor);
       wing.position.set(side * 12.2, -0.4, 1.8);
@@ -202,7 +223,6 @@ export class BossController {
       this.root.add(blade);
     }
 
-    // Armored command citadel tower
     const citadel = new THREE.Mesh(new THREE.BoxGeometry(7.2, 3.4, 5.2), darkArmor);
     citadel.position.set(0, 3.2, -0.8);
     this.root.add(citadel);
@@ -210,11 +230,10 @@ export class BossController {
     visor.position.set(0, 3.6, -0.7);
     this.root.add(visor);
 
-    // Glowing ribs across hull
     const rib = new THREE.Mesh(new THREE.BoxGeometry(22.6, 0.35, 9.3), cyanTrim);
     this.root.add(rib);
 
-    // Animated blast doors that slide open in Phase 2!
+    // Animated blast doors
     const doorGeo = new THREE.BoxGeometry(3.2, 3.8, 1.0);
     this.blastDoorLeft = new THREE.Mesh(doorGeo, darkArmor);
     this.blastDoorLeft.position.set(-1.6, 0, 4.7);
@@ -222,206 +241,285 @@ export class BossController {
     this.blastDoorRight.position.set(1.6, 0, 4.7);
     this.root.add(this.blastDoorLeft, this.blastDoorRight);
 
-    // Spinning gyro halo behind boss
-    const halo = new THREE.Mesh(
-      new THREE.TorusGeometry(9.2, 0.28, 6, 24),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x00f0ff).multiplyScalar(2.4), wireframe: true, toneMapped: false })
+    // Glowing Core Shield Dome projected by the two wing turrets!
+    this.coreShieldDome = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(4.4, 1),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0x00f0ff).multiplyScalar(1.8),
+        wireframe: true,
+        transparent: true,
+        opacity: 0.72,
+        toneMapped: false,
+      })
     );
-    halo.position.set(0, 0, -4.5);
-    this.root.add(halo);
-    this.haloRings.push(halo);
+    this.coreShieldDome.position.set(0, 0, 3.8);
+    this.root.add(this.coreShieldDome);
 
-    // 4 Articulated Wing Turrets (Phase 1)
-    const turretHp = Math.round((totalHp * 0.45) / 4);
-    const positions = [
-      [-9.5, -0.8, 4.5],
-      [-5.2, 1.9, 4.4],
-      [5.2, 1.9, 4.4],
-      [9.5, -0.8, 4.5],
+    // TWO Heavy Destructible Wing Turrets (Left & Right)
+    const turretHp = Math.round((totalHp * 0.44) / 2);
+    const turretCoords = [
+      [-9.2, 0.4, 4.8],
+      [9.2, 0.4, 4.8],
     ];
-    positions.forEach(([x, y, z], idx) => {
+    turretCoords.forEach(([x, y, z], idx) => {
       const tGroup = new THREE.Group();
       tGroup.position.set(x, y, z);
-      const pod = new THREE.Mesh(new THREE.OctahedronGeometry(1.55, 0), crimsonGlow);
-      const cage = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.22, 6, 8), darkArmor);
-      const barrelL = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 2.2, 6), cyanTrim);
+      const pod = new THREE.Mesh(new THREE.OctahedronGeometry(1.9, 0), crimsonGlow);
+      const cage = new THREE.Mesh(new THREE.TorusGeometry(2.25, 0.28, 6, 8), darkArmor);
+      const barrelL = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 2.8, 6), cyanTrim);
       barrelL.rotation.x = Math.PI / 2;
-      barrelL.position.set(-0.55, 0, 1.1);
+      barrelL.position.set(-0.75, 0, 1.3);
       const barrelR = barrelL.clone();
-      barrelR.position.x = 0.55;
-      tGroup.add(pod, cage, barrelL, barrelR);
+      barrelR.position.x = 0.75;
+      // Visible energy tether beam connecting turret to central core shield
+      const tether = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 8.8, 6), cyanTrim);
+      tether.rotation.z = Math.PI / 2;
+      tether.position.set(x > 0 ? -4.5 : 4.5, -0.2, -0.6);
+      tGroup.add(pod, cage, barrelL, barrelR, tether);
       this.root.add(tGroup);
-      this.registerPart(`turret_${idx}`, tGroup, turretHp, 2.35, false);
+      this.registerPart(`wing_turret_${idx}`, tGroup, turretHp, 2.75, false);
     });
 
-    // Central Singularity Reactor Core (Phase 2)
+    // Central Singularity Core
     const coreGroup = new THREE.Group();
     coreGroup.position.set(0, 0, 3.8);
-    const coreMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(2.45, 0), solarCore);
-    const coreGyro = new THREE.Mesh(new THREE.TorusGeometry(3.1, 0.18, 6, 16), crimsonGlow);
+    const coreMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(2.55, 0), solarCore);
+    const coreGyro = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.2, 6, 16), crimsonGlow);
     coreGroup.add(coreMesh, coreGyro);
     this.root.add(coreGroup);
-    this.registerPart('reactor_core', coreGroup, Math.round(totalHp * 0.55), 3.1, true);
+    this.registerPart('reactor_core', coreGroup, Math.round(totalHp * 0.56), 3.1, true);
   }
 
+  /**
+   * SECTOR 2 — OCTA-CORE SENTINEL
+   * 4 rotating wireframe prism shields that BLOCK normal shots.
+   * Thread shots through the gaps to hit the core OR barrel-roll reflect its charged plasma orbs to SHATTER the shields!
+   */
   private buildOctaCoreSentinel(totalHp: number): void {
-    const plateMat = new THREE.MeshStandardMaterial({
-      color: 0x13223e,
-      metalness: 0.7,
-      roughness: 0.22,
-      flatShading: true,
+    const wireShieldMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0x00ffd5).multiplyScalar(2.4),
+      wireframe: true,
+      toneMapped: false,
     });
-    const edgeMat = new THREE.MeshStandardMaterial({
-      color: 0x00ffd5,
-      emissive: new THREE.Color(0x00ffd5),
-      emissiveIntensity: 3.3,
+    const innerPlateMat = new THREE.MeshStandardMaterial({
+      color: 0x132844,
+      transparent: true,
+      opacity: 0.72,
+      metalness: 0.7,
+      roughness: 0.2,
       flatShading: true,
     });
     const coreMat = new THREE.MeshStandardMaterial({
       color: 0xc84bff,
       emissive: new THREE.Color(0xc84bff),
-      emissiveIntensity: 4.0,
-      flatShading: true,
-    });
-
-    // Nested counter-rotating holographic god-halos
-    const halo1 = new THREE.Mesh(
-      new THREE.TorusGeometry(10.5, 0.22, 6, 28),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x00ffd5).multiplyScalar(2.6), wireframe: true, toneMapped: false })
-    );
-    const halo2 = new THREE.Mesh(
-      new THREE.TorusGeometry(8.0, 0.25, 6, 20),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(0xc84bff).multiplyScalar(2.8), wireframe: true, toneMapped: false })
-    );
-    this.root.add(halo1, halo2);
-    this.haloRings.push(halo1, halo2);
-
-    // Central crystalline eye core
-    const coreGroup = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(3.8, 0), coreMat);
-    const wire = new THREE.Mesh(
-      new THREE.OctahedronGeometry(4.25, 0),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x00f0ff).multiplyScalar(2.6), wireframe: true, toneMapped: false })
-    );
-    coreGroup.add(core, wire);
-    this.root.add(coreGroup);
-    this.registerPart('sentinel_core', coreGroup, Math.round(totalHp * 0.55), 3.8, true);
-
-    // 4 Heavy Orbiting Prism Shields
-    const plateHp = Math.round((totalHp * 0.45) / 4);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      const pGroup = new THREE.Group();
-      pGroup.position.set(Math.cos(a) * 7.2, Math.sin(a) * 4.8, 2.4);
-      const shield = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 0.9, 6), plateMat);
-      shield.rotation.x = Math.PI / 2;
-      const glow = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.22, 6, 6), edgeMat);
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.65, 2.4, 4), edgeMat);
-      spike.rotation.x = Math.PI / 2;
-      spike.position.z = 1.4;
-      pGroup.add(shield, glow, spike);
-      this.root.add(pGroup);
-      this.registerPart(`shield_plate_${i}`, pGroup, plateHp, 2.6, false);
-    }
-  }
-
-  private buildSolarisLeviathan(totalHp: number): void {
-    const obsidianMat = new THREE.MeshStandardMaterial({
-      color: 0x221712,
-      metalness: 0.75,
-      roughness: 0.22,
-      flatShading: true,
-    });
-    const solarGlow = new THREE.MeshStandardMaterial({
-      color: 0xffd447,
-      emissive: new THREE.Color(0xffaa00),
-      emissiveIntensity: 4.0,
-      flatShading: true,
-    });
-    const crimsonPod = new THREE.MeshStandardMaterial({
-      color: 0xff2a85,
-      emissive: new THREE.Color(0xff2a85),
       emissiveIntensity: 3.6,
       flatShading: true,
     });
 
-    // 7 Undulating Cyber-Serpent Spine Segments with Dorsal Fins!
-    for (let s = 0; s < 7; s++) {
-      const segGroup = new THREE.Group();
-      segGroup.position.set(0, 0, -s * 4.6);
-      const rad = Math.max(1.2, 3.1 - s * 0.28);
-      const body = new THREE.Mesh(new THREE.OctahedronGeometry(rad, 0), obsidianMat);
-      body.scale.set(1.65, 0.95, 1.35);
-      const fin = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.45, rad * 1.9, 3), solarGlow);
-      fin.position.set(0, rad * 1.1, 0);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(rad * 1.3, 0.14, 6, 12), s % 2 === 0 ? solarGlow : crimsonPod);
-      segGroup.add(body, fin, ring);
-      this.root.add(segGroup);
-      this.serpentSegments.push(segGroup);
-    }
+    const halo1 = new THREE.Mesh(
+      new THREE.TorusGeometry(10.8, 0.2, 6, 28),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x00ffd5).multiplyScalar(1.9), wireframe: true, toneMapped: false })
+    );
+    const halo2 = new THREE.Mesh(
+      new THREE.TorusGeometry(8.2, 0.22, 6, 20),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0xc84bff).multiplyScalar(2.0), wireframe: true, toneMapped: false })
+    );
+    this.root.add(halo1, halo2);
+    this.haloRings.push(halo1, halo2);
 
-    // Twin Sweeping Scythe Wings
-    for (const side of [-1, 1]) {
-      const scythe = new THREE.Mesh(new THREE.BoxGeometry(11, 0.55, 2.8), obsidianMat);
-      scythe.position.set(side * 8.2, 0.5, -1.5);
-      scythe.rotation.z = side * 0.22;
-      const edge = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.2, 0.45), solarGlow);
-      edge.position.set(side * 8.2, 0.5, 0.1);
-      edge.rotation.z = side * 0.22;
-      this.root.add(scythe, edge);
-    }
+    // Central Octa-Core (vulnerable through gaps in the rotating prism shields!)
+    const coreGroup = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(3.8, 0), coreMat);
+    const wire = new THREE.Mesh(
+      new THREE.OctahedronGeometry(4.25, 0),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd447).multiplyScalar(2.4), wireframe: true, toneMapped: false })
+    );
+    coreGroup.add(core, wire);
+    this.root.add(coreGroup);
+    this.registerPart('sentinel_core', coreGroup, Math.round(totalHp * 0.7), 3.9, true);
 
-    // 4 Crimson Flank Pods (Phase 1)
-    const podHp = Math.round((totalHp * 0.45) / 4);
-    const coords = [
-      [-8.0, 2.5, 1.6],
-      [8.0, 2.5, 1.6],
-      [-8.0, -2.5, 1.6],
-      [8.0, -2.5, 1.6],
-    ];
-    coords.forEach(([x, y, z], idx) => {
-      const g = new THREE.Group();
-      g.position.set(x, y, z);
-      const pod = new THREE.Mesh(new THREE.IcosahedronGeometry(1.75, 0), crimsonPod);
-      const halo = new THREE.Mesh(new THREE.TorusGeometry(2.15, 0.18, 6, 10), solarGlow);
-      g.add(pod, halo);
-      this.root.add(g);
-      this.registerPart(`flank_pod_${idx}`, g, podHp, 2.5, false);
+    // 4 Rotating Wireframe Prism Shields (block normal shots; shatter on reflected plasma orbs!)
+    const shieldHp = Math.round((totalHp * 0.3) / 4);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const pGroup = new THREE.Group();
+      pGroup.position.set(Math.cos(a) * 6.8, Math.sin(a) * 4.6, 3.0);
+      const prismGeo = new THREE.CylinderGeometry(2.7, 2.7, 1.1, 6);
+      prismGeo.rotateX(Math.PI / 2);
+      const plate = new THREE.Mesh(prismGeo, innerPlateMat);
+      const wireFrame = new THREE.Mesh(prismGeo, wireShieldMat);
+      wireFrame.scale.setScalar(1.06);
+      pGroup.add(plate, wireFrame);
+      this.root.add(pGroup);
+      this.registerPart(`prism_shield_${i}`, pGroup, shieldHp, 2.85, false, {
+        isReflectShield: true,
+      });
+    }
+  }
+
+  /**
+   * SECTOR 3 — SOLARIS LEVIATHAN
+   * 7-segment glowing cyber-serpent weaving in a 3D Figure-8 through the Hyper-Grid tunnel!
+   * Destroying body segments speeds it up and shifts its color phase; Head becomes vulnerable once 4+ segments are destroyed!
+   */
+  private buildSolarisLeviathan(totalHp: number): void {
+    const obsidianMat = new THREE.MeshStandardMaterial({
+      color: 0x261a14,
+      metalness: 0.7,
+      roughness: 0.25,
+      flatShading: true,
     });
 
-    // Solaris Maw Core (Phase 2)
-    const coreG = new THREE.Group();
-    coreG.position.set(0, 0, 3.6);
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(2.8, 1), solarGlow);
-    const mawRing = new THREE.Mesh(new THREE.TorusGeometry(3.5, 0.25, 6, 16), crimsonPod);
-    coreG.add(core, mawRing);
-    this.root.add(coreG);
-    this.registerPart('solaris_core', coreG, Math.round(totalHp * 0.55), 3.4, true);
+    // Head Core (Segment 0 — invulnerable until 4+ body segments are destroyed!)
+    const headMat = new THREE.MeshStandardMaterial({
+      color: 0xffd447,
+      emissive: new THREE.Color(0xffaa00),
+      emissiveIntensity: 3.4,
+      flatShading: true,
+    });
+    this.serpentMats.push(headMat);
+
+    const headGroup = new THREE.Group();
+    const headBody = new THREE.Mesh(new THREE.IcosahedronGeometry(3.1, 1), headMat);
+    const headCrown = new THREE.Mesh(new THREE.TorusGeometry(3.8, 0.26, 6, 16), obsidianMat);
+    const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.75, 4.2, 4), headMat);
+    hornL.position.set(-2.6, 2.0, 0.8);
+    hornL.rotation.z = 0.55;
+    const hornR = hornL.clone();
+    hornR.position.x = 2.6;
+    hornR.rotation.z = -0.55;
+    headGroup.add(headBody, headCrown, hornL, hornR);
+    this.root.add(headGroup);
+    this.serpentSegments.push(headGroup);
+    this.registerPart('solaris_head', headGroup, Math.round(totalHp * 0.42), 3.5, true);
+
+    // 6 Destructible Body Segments (Segments 1..6)
+    const segHp = Math.round((totalHp * 0.58) / 6);
+    for (let s = 1; s <= 6; s++) {
+      const segGlow = new THREE.MeshStandardMaterial({
+        color: 0xff6622,
+        emissive: new THREE.Color(0xff4411),
+        emissiveIntensity: 2.9,
+        flatShading: true,
+      });
+      this.serpentMats.push(segGlow);
+
+      const segGroup = new THREE.Group();
+      const rad = Math.max(1.6, 2.85 - s * 0.18);
+      const body = new THREE.Mesh(new THREE.OctahedronGeometry(rad, 0), obsidianMat);
+      body.scale.set(1.4, 1.0, 1.25);
+      const coreNode = new THREE.Mesh(new THREE.IcosahedronGeometry(rad * 0.72, 0), segGlow);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(rad * 1.25, 0.16, 6, 12), segGlow);
+      segGroup.add(body, coreNode, ring);
+      this.root.add(segGroup);
+      this.serpentSegments.push(segGroup);
+      this.registerPart(`serpent_seg_${s}`, segGroup, segHp, rad * 1.2, false, {
+        isSerpentSegment: true,
+      });
+    }
   }
 
   public getTargetableParts(): BossPart[] {
     if (!this.active) return [];
-    const nonCoresAlive = this.parts.filter((p) => !p.isCore && p.alive);
-    if (this.phase === 1 && nonCoresAlive.length > 0 && this.bossId !== 'octa_core_sentinel') {
-      return nonCoresAlive;
+    if (this.bossId === 'aegis_dreadnought') {
+      const turrets = this.parts.filter((p) => !p.isCore && p.alive);
+      return turrets.length > 0 ? turrets : this.parts.filter((p) => p.alive);
+    }
+    if (this.bossId === 'octa_core_sentinel') {
+      return this.parts.filter((p) => p.isCore && p.alive);
+    }
+    // Solaris Leviathan: target body segments until 4+ destroyed, then head!
+    const segs = this.parts.filter((p) => p.isSerpentSegment && p.alive);
+    if (this.destroyedSegmentsCount < 4 && segs.length > 0) {
+      return segs;
     }
     return this.parts.filter((p) => p.alive);
   }
 
   public damagePart(
     part: BossPart,
-    dmg: number
-  ): { partDestroyed: boolean; phaseBreak: boolean; bossDefeated: boolean; pos: THREE.Vector3 } {
+    dmg: number,
+    isReflected = false
+  ): {
+    partDestroyed: boolean;
+    phaseBreak: boolean;
+    bossDefeated: boolean;
+    blocked: boolean;
+    shatteredShield: boolean;
+    pos: THREE.Vector3;
+  } {
     const pos = new THREE.Vector3();
     part.getPosition(pos);
 
     if (!this.active || !part.alive) {
-      return { partDestroyed: false, phaseBreak: false, bossDefeated: false, pos };
+      return {
+        partDestroyed: false,
+        phaseBreak: false,
+        bossDefeated: false,
+        blocked: false,
+        shatteredShield: false,
+        pos,
+      };
     }
 
-    const nonCoresAlive = this.parts.some((p) => !p.isCore && p.alive);
-    const actualDmg =
-      part.isCore && nonCoresAlive && this.bossId !== 'octa_core_sentinel' ? dmg * 0.12 : dmg;
+    // SECTOR 2 MECHANIC: Octa-Core Sentinel Prism Shields BLOCK normal shots, SHATTER on reflected orbs!
+    if (part.isReflectShield) {
+      if (!isReflected) {
+        part.hitFlashTimer = 0.08;
+        part.mesh.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) obj.material = SHIELD_BLOCK_MAT;
+        });
+        return {
+          partDestroyed: false,
+          phaseBreak: false,
+          bossDefeated: false,
+          blocked: true,
+          shatteredShield: false,
+          pos,
+        };
+      }
+      // Reflected shot SHATTERS the prism shield immediately!
+      part.hp = 0;
+      part.alive = false;
+      part.mesh.visible = false;
+      this.totalHp = this.parts.reduce((acc, p) => acc + Math.max(0, p.hp), 0);
+      const shieldsLeft = this.parts.filter((p) => p.isReflectShield && p.alive).length;
+      const phaseBreak = this.phase === 1 && shieldsLeft <= 2;
+      if (phaseBreak) this.phase = 2;
+      return {
+        partDestroyed: true,
+        phaseBreak,
+        bossDefeated: false,
+        blocked: false,
+        shatteredShield: true,
+        pos,
+      };
+    }
+
+    // SECTOR 3 MECHANIC: Solaris Leviathan Head is armored until 4+ body segments are destroyed!
+    if (this.bossId === 'solaris_leviathan' && part.isCore && this.destroyedSegmentsCount < 4) {
+      part.hitFlashTimer = 0.06;
+      part.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.material = SHIELD_BLOCK_MAT;
+      });
+      return {
+        partDestroyed: false,
+        phaseBreak: false,
+        bossDefeated: false,
+        blocked: true,
+        shatteredShield: false,
+        pos,
+      };
+    }
+
+    // SECTOR 1 MECHANIC: Aegis Core takes 25% damage until BOTH wing turrets are destroyed!
+    let actualDmg = dmg;
+    if (this.bossId === 'aegis_dreadnought' && part.isCore) {
+      const turretsAlive = this.parts.some((p) => !p.isCore && p.alive);
+      if (turretsAlive) {
+        actualDmg = dmg * 0.25;
+      }
+    }
 
     part.hp = Math.max(0, part.hp - actualDmg);
     part.hitFlashTimer = 0.055;
@@ -434,16 +532,38 @@ export class BossController {
       part.alive = false;
       part.mesh.visible = false;
       partDestroyed = true;
+      if (part.isSerpentSegment) {
+        this.destroyedSegmentsCount += 1;
+        this.shiftLeviathanColorPhase();
+      }
     }
 
     this.totalHp = this.parts.reduce((acc, p) => acc + Math.max(0, p.hp), 0);
 
+    // Phase 2 transition logic per boss
     let phaseBreak = false;
-    const allSubPartsDown = !this.parts.some((p) => !p.isCore && p.alive);
-    if (this.phase === 1 && (allSubPartsDown || this.totalHp <= this.maxTotalHp * 0.52)) {
-      this.phase = 2;
-      phaseBreak = true;
-      this.attackTimer = 0.9;
+    if (this.phase === 1) {
+      if (this.bossId === 'aegis_dreadnought') {
+        const turretsAlive = this.parts.some((p) => !p.isCore && p.alive);
+        if (!turretsAlive) {
+          this.phase = 2;
+          phaseBreak = true;
+          if (this.coreShieldDome) this.coreShieldDome.visible = false;
+          this.attackTimer = 0.85;
+        }
+      } else if (this.bossId === 'octa_core_sentinel') {
+        if (this.totalHp <= this.maxTotalHp * 0.55) {
+          this.phase = 2;
+          phaseBreak = true;
+          this.attackTimer = 0.85;
+        }
+      } else if (this.bossId === 'solaris_leviathan') {
+        if (this.destroyedSegmentsCount >= 4) {
+          this.phase = 2;
+          phaseBreak = true;
+          this.attackTimer = 0.8;
+        }
+      }
     }
 
     const core = this.parts.find((p) => p.isCore);
@@ -455,7 +575,24 @@ export class BossController {
       this.scene.remove(this.root);
     }
 
-    return { partDestroyed, phaseBreak, bossDefeated, pos };
+    return {
+      partDestroyed,
+      phaseBreak,
+      bossDefeated,
+      blocked: false,
+      shatteredShield: false,
+      pos,
+    };
+  }
+
+  private shiftLeviathanColorPhase(): void {
+    // Shift serpent emissive color as segments are destroyed: Gold -> Crimson -> Blazing Magenta-White!
+    const t = Math.min(1, this.destroyedSegmentsCount / 4);
+    const c = new THREE.Color('#ff6622').lerp(new THREE.Color('#ff11aa'), t);
+    for (const m of this.serpentMats) {
+      m.emissive.copy(c);
+      m.emissiveIntensity = 3.0 + t * 1.4;
+    }
   }
 
   public update(
@@ -464,43 +601,60 @@ export class BossController {
     playerVel: THREE.Vector3,
     projectiles: ProjectilePool,
     enemies: EnemyFactory,
+    aggressionMult = 1.0,
+    bulletDensityMult = 1.0,
     onTelegraph?: () => void
   ): void {
     if (!this.active) return;
 
     this.age += dt;
+    this.fightElapsedSec += dt;
 
-    // Dramatic entrance to Z = -52
+    // Entrance to Z = -52
     if (!this.entered) {
       this.root.position.z = THREE.MathUtils.lerp(this.root.position.z, -52, Math.min(1, dt * 2.5));
       if (this.root.position.z > -54) this.entered = true;
+    } else if (this.bossId === 'solaris_leviathan') {
+      // SECTOR 3: Dramatic Figure-8 Lissajous weave accelerating with every destroyed body segment!
+      const speedScale = (1 + this.destroyedSegmentsCount * 0.14) * aggressionMult;
+      const t = this.age * 0.95 * speedScale;
+      this.root.position.x = Math.sin(t) * 8.6;
+      this.root.position.y = Math.sin(t * 2) * 3.8;
+      this.root.rotation.z = Math.cos(t) * 0.22;
+
+      // Trailing body segments follow the Figure-8 path with phase lag!
+      for (let s = 1; s < this.serpentSegments.length; s++) {
+        const seg = this.serpentSegments[s];
+        const lag = t - s * 0.36;
+        const targetX = Math.sin(lag) * 8.6 - this.root.position.x;
+        const targetY = Math.sin(lag * 2) * 3.8 - this.root.position.y;
+        seg.position.set(targetX, targetY, -s * 4.4);
+        seg.rotation.z = Math.cos(lag) * 0.5;
+      }
     } else {
-      const ampX = this.phase === 2 ? 7.2 : 4.5;
-      const ampY = this.phase === 2 ? 3.2 : 1.7;
-      const speedX = this.phase === 2 ? 1.45 : 0.85;
+      const ampX = this.phase === 2 ? 7.0 : 4.4;
+      const ampY = this.phase === 2 ? 3.0 : 1.6;
+      const speedX = (this.phase === 2 ? 1.4 : 0.85) * aggressionMult;
       this.root.position.x = Math.sin(this.age * speedX) * ampX;
-      this.root.position.y = 0.6 + Math.cos(this.age * 1.1) * ampY;
+      this.root.position.y = 0.6 + Math.cos(this.age * 1.05) * ampY;
       this.root.rotation.z = Math.cos(this.age * speedX) * (this.phase === 2 ? 0.14 : 0.06);
     }
 
-    // Animate blast doors sliding open in Phase 2 (Aegis Dreadnought)
+    // Aegis Dreadnought: blast doors & core shield dome
     if (this.blastDoorLeft && this.blastDoorRight) {
       const targetX = this.phase === 2 ? 5.2 : 1.6;
       this.blastDoorLeft.position.x = THREE.MathUtils.lerp(this.blastDoorLeft.position.x, -targetX, dt * 3.5);
       this.blastDoorRight.position.x = THREE.MathUtils.lerp(this.blastDoorRight.position.x, targetX, dt * 3.5);
+    }
+    if (this.coreShieldDome && this.coreShieldDome.visible) {
+      this.coreShieldDome.rotation.y += dt * 1.4;
+      this.coreShieldDome.rotation.x += dt * 0.9;
     }
 
     // Spin holographic halos
     this.haloRings.forEach((h, i) => {
       h.rotation.z += dt * (i % 2 === 0 ? 1.1 : -1.5) * (this.phase === 2 ? 1.8 : 1.0);
       h.rotation.y += dt * (i % 2 === 0 ? 0.45 : -0.6);
-    });
-
-    // Undulate Solaris Leviathan serpent spine in 3D!
-    this.serpentSegments.forEach((seg, idx) => {
-      if (idx === 0) return;
-      seg.position.x = Math.sin(this.age * 3.2 - idx * 0.7) * (idx * 0.9);
-      seg.position.y = Math.cos(this.age * 2.4 - idx * 0.6) * (idx * 0.45);
     });
 
     // Animate parts & restore hit flashes
@@ -515,20 +669,20 @@ export class BossController {
         }
       }
 
-      if (this.bossId === 'octa_core_sentinel' && !p.isCore && p.alive) {
-        const orbitSpeed = this.phase === 2 ? 2.2 : 1.15;
-        const radiusX = this.phase === 2 ? 9.0 : 6.8;
-        const radiusY = this.phase === 2 ? 5.6 : 4.5;
+      if (this.bossId === 'octa_core_sentinel' && p.isReflectShield && p.alive) {
+        const orbitSpeed = (this.phase === 2 ? 1.85 : 1.05) * aggressionMult;
+        const radiusX = 6.6;
+        const radiusY = 4.6;
         const a = this.age * orbitSpeed + (i * Math.PI) / 2;
-        p.mesh.position.set(Math.cos(a) * radiusX, Math.sin(a) * radiusY, 2.4);
+        p.mesh.position.set(Math.cos(a) * radiusX, Math.sin(a) * radiusY, 3.0);
         p.mesh.rotation.z = a;
       } else if (p.isCore && p.alive) {
-        p.mesh.rotation.y += dt * (this.phase === 2 ? 4.2 : 1.5);
-        p.mesh.rotation.x += dt * 1.1;
+        p.mesh.rotation.y += dt * (this.phase === 2 ? 4.0 : 1.4);
+        p.mesh.rotation.x += dt * 1.0;
       }
     }
 
-    // Telegraphing charge orb countdown
+    // Telegraphing charge orb
     if (this.chargeTimer > 0 && this.chargeOrb) {
       this.chargeTimer -= dt;
       this.chargeOrb.visible = true;
@@ -542,7 +696,7 @@ export class BossController {
       }
     }
 
-    // Sweeping laser beam update (Horizontal OR Vertical!)
+    // Sweeping laser beam update
     if (this.sweepBeamActive && this.sweepBeamMesh) {
       this.sweepBeamTimer -= dt;
       const prog = 1 - this.sweepBeamTimer / this.sweepDuration;
@@ -568,21 +722,22 @@ export class BossController {
 
     if (!this.entered) return;
 
-    // Slightly harder, tighter multi-pattern attack cadence!
     this.attackTimer -= dt;
     if (this.attackTimer <= 0 && this.chargeTimer <= 0) {
-      this.triggerBossAttack(playerPos, playerVel, projectiles, onTelegraph);
-      this.attackTimer = this.phase === 2 ? 0.88 : 1.24;
+      this.triggerBossAttack(playerPos, playerVel, projectiles, bulletDensityMult, onTelegraph);
+      const baseCd = this.phase === 2 ? 0.92 : 1.28;
+      const leviathanBonus =
+        this.bossId === 'solaris_leviathan' ? Math.max(0.62, 1 - this.destroyedSegmentsCount * 0.08) : 1;
+      this.attackTimer = (baseCd * leviathanBonus) / aggressionMult;
     }
 
-    // Escort reinforcements in Phase 2 for ALL bosses!
     if (this.phase === 2) {
       this.droneTimer -= dt;
       if (this.droneTimer <= 0) {
-        this.droneTimer = this.bossId === 'solaris_leviathan' ? 4.2 : 5.0;
+        this.droneTimer = 5.4 / aggressionMult;
         const escortKind = this.bossId === 'aegis_dreadnought' ? 'scout' : 'interceptor';
-        enemies.spawnSingle(escortKind, -9.5, 3.2, -105, 'swoop_pass', 1.15, 0);
-        enemies.spawnSingle(escortKind, 9.5, -2.5, -105, 'swoop_pass', 1.15, 1.5);
+        enemies.spawnSingle(escortKind, -9.5, 3.2, -105, 'swoop_pass', 1.0 * aggressionMult, 0);
+        enemies.spawnSingle(escortKind, 9.5, -2.5, -105, 'swoop_pass', 1.0 * aggressionMult, 1.5);
       }
     }
   }
@@ -591,27 +746,27 @@ export class BossController {
     playerPos: THREE.Vector3,
     playerVel: THREE.Vector3,
     projectiles: ProjectilePool,
+    bulletDensityMult: number,
     onTelegraph?: () => void
   ): void {
     this.spiralCounter++;
     const origin = new THREE.Vector3();
-    // Predict player position slightly for real challenge
-    const leadPos = playerPos.clone().addScaledVector(playerVel, this.phase === 2 ? 0.32 : 0.16);
+    const leadPos = playerPos.clone().addScaledVector(playerVel, this.phase === 2 ? 0.3 : 0.14);
 
-    // Every 3rd attack in Phase 2 (or 4th in Phase 1 for Leviathan): telegraphed Sweeping Laser Wall!
+    // Aegis Dreadnought Phase 2: ALWAYS horizontal sweeping laser to dodge vertically!
     const doSweep =
       !this.sweepBeamActive &&
-      ((this.phase === 2 && this.spiralCounter % 3 === 0) ||
-        (this.bossId === 'solaris_leviathan' && this.spiralCounter % 4 === 0));
+      ((this.bossId === 'aegis_dreadnought' && this.phase === 2 && this.spiralCounter % 2 === 0) ||
+        (this.bossId === 'solaris_leviathan' && this.phase === 2 && this.spiralCounter % 3 === 0));
 
     if (doSweep) {
       this.chargeTimer = 0.65;
       if (onTelegraph) onTelegraph();
       this.pendingAttack = () => {
         this.sweepBeamActive = true;
-        this.sweepAxis = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+        this.sweepAxis = this.bossId === 'aegis_dreadnought' ? 'horizontal' : Math.random() < 0.5 ? 'horizontal' : 'vertical';
         this.sweepBeamDir = Math.random() < 0.5 ? 1 : -1;
-        this.sweepDuration = this.phase === 2 ? 1.55 : 1.9;
+        this.sweepDuration = this.phase === 2 ? 1.65 : 2.0;
         this.sweepBeamTimer = this.sweepDuration;
       };
       return;
@@ -619,23 +774,25 @@ export class BossController {
 
     if (this.bossId === 'aegis_dreadnought') {
       if (this.phase === 1) {
-        // Aimed volley from every alive turret + center spread
         for (const p of this.parts) {
           if (!p.alive || p.isCore) continue;
           p.getPosition(origin);
-          const dir = new THREE.Vector3().subVectors(leadPos, origin).normalize();
-          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(72), 14, 0.92);
+          const count = bulletDensityMult >= 1.5 ? 3 : 2;
+          for (let k = 0; k < count; k++) {
+            const spread = (k - (count - 1) / 2) * 2.2;
+            const dir = leadPos.clone().add(new THREE.Vector3(spread, 0, 0)).sub(origin).normalize();
+            projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(70), 14, 0.92);
+          }
         }
       } else {
-        // Phase 2: 5-shot fan + radial ring!
         const core = this.parts.find((p) => p.isCore);
         if (core) core.getPosition(origin);
         else this.root.getWorldPosition(origin);
-
-        for (let k = -2; k <= 2; k++) {
-          const target = leadPos.clone().add(new THREE.Vector3(k * 2.8, Math.abs(k) * 0.6, 0));
+        const half = bulletDensityMult >= 1.5 ? 3 : 2;
+        for (let k = -half; k <= half; k++) {
+          const target = leadPos.clone().add(new THREE.Vector3(k * 2.6, Math.abs(k) * 0.5, 0));
           const dir = target.sub(origin).normalize();
-          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(78), 15, 1.0);
+          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(76), 15, 1.0);
         }
       }
       return;
@@ -643,43 +800,26 @@ export class BossController {
 
     if (this.bossId === 'octa_core_sentinel') {
       this.root.getWorldPosition(origin);
-      const count = this.phase === 2 ? 14 : 9;
-      for (let i = 0; i < count; i++) {
-        const a = (i / count) * Math.PI * 2 + this.age * 1.4;
-        const vel = new THREE.Vector3(Math.cos(a) * 18, Math.sin(a) * 12, 66);
-        projectiles.spawnEnemyPlasma(origin, vel, 14, 0.95);
-      }
-      // Plus twin high-speed aimed lances
-      for (const offset of [-1.8, 1.8]) {
-        const aimed = leadPos
-          .clone()
-          .add(new THREE.Vector3(offset, 0, 0))
-          .sub(origin)
-          .normalize()
-          .multiplyScalar(86);
-        projectiles.spawnEnemyPlasma(origin, aimed, 16, 1.05);
+      // Fires big bright charged plasma orbs ideal for barrel-roll reflection into its prism shields!
+      const aimed = leadPos.clone().sub(origin).normalize().multiplyScalar(68);
+      projectiles.spawnEnemyPlasma(origin, aimed, 16, 1.2);
+
+      const ringCount = Math.round((this.phase === 2 ? 11 : 7) * bulletDensityMult);
+      for (let i = 0; i < ringCount; i++) {
+        const a = (i / ringCount) * Math.PI * 2 + this.age * 1.4;
+        const vel = new THREE.Vector3(Math.cos(a) * 16, Math.sin(a) * 11, 62);
+        projectiles.spawnEnemyPlasma(origin, vel, 13, 0.92);
       }
       return;
     }
 
-    // solaris_leviathan — brutal bullet-hell serpent!
+    // Solaris Leviathan: fires from head + alive body segments!
     this.root.getWorldPosition(origin);
-    if (this.phase === 1) {
-      for (const p of this.parts) {
-        if (!p.alive || p.isCore) continue;
-        p.getPosition(origin);
-        for (const spread of [-1.6, 1.6]) {
-          const dir = leadPos.clone().add(new THREE.Vector3(spread, 0, 0)).sub(origin).normalize();
-          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(76), 15, 0.95);
-        }
-      }
-    } else {
-      // Spiral + 7-shot barrage (perfect for barrel-roll deflection!)
-      for (let k = -3; k <= 3; k++) {
-        const target = leadPos.clone().add(new THREE.Vector3(k * 2.2, Math.sin(k + this.age) * 1.8, 0));
-        const dir = target.sub(origin).normalize();
-        projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(82), 16, 1.05);
-      }
+    const fanHalf = this.phase === 2 ? (bulletDensityMult >= 1.5 ? 3 : 2) : 1;
+    for (let k = -fanHalf; k <= fanHalf; k++) {
+      const target = leadPos.clone().add(new THREE.Vector3(k * 2.4, Math.sin(k + this.age) * 1.6, 0));
+      const dir = target.sub(origin).normalize();
+      projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(78), 15, 1.0);
     }
   }
 
@@ -690,8 +830,10 @@ export class BossController {
     this.pendingAttack = null;
     this.blastDoorLeft = null;
     this.blastDoorRight = null;
+    this.coreShieldDome = null;
     this.haloRings = [];
     this.serpentSegments = [];
+    this.serpentMats = [];
     this.chargeOrb = null;
     this.scene.remove(this.root);
     while (this.root.children.length > 0) {

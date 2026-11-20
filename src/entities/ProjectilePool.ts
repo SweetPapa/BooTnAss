@@ -88,7 +88,8 @@ export class ProjectilePool {
     origin: THREE.Vector3,
     direction: THREE.Vector3,
     overdrive = false,
-    reflected = false
+    reflected = false,
+    damageMult = 1.0
   ): void {
     const speed = reflected ? 170 : 185;
     this.projectiles.push({
@@ -98,8 +99,8 @@ export class ProjectilePool {
       prevPos: origin.clone(),
       vel: direction.clone().normalize().multiplyScalar(speed),
       life: 1.45,
-      damage: reflected ? 36 : overdrive ? 15 : 12,
-      radius: reflected ? 1.15 : 0.72,
+      damage: (reflected ? 36 : overdrive ? 15 : 12) * damageMult,
+      radius: reflected ? 1.25 : 0.72,
       target: null,
     });
   }
