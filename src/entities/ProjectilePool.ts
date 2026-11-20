@@ -18,12 +18,13 @@ export interface Projectile {
   damage: number;
   radius: number;
   target: HomingTarget | null;
+  grazed?: boolean;
 }
 
 export class ProjectilePool {
   private readonly maxPlayerBolts = 220;
   private readonly maxMissiles = 48;
-  private readonly maxEnemyShots = 260;
+  private readonly maxEnemyShots = 420;
 
   public readonly projectiles: Projectile[] = [];
 

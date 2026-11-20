@@ -64,7 +64,7 @@ export const BossEventSchema = z.object({
   type: z.literal('boss'),
   bossId: z.enum(['aegis_dreadnought', 'octa_core_sentinel', 'solaris_leviathan']),
   name: z.string().min(1).max(60),
-  hp: z.number().min(200).max(4000),
+  hp: z.number().min(200).max(20000),
   phases: z.number().int().min(2).max(3),
 });
 

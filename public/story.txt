@@ -1,4 +1,4 @@
-# STARBURST // OPENING CRAWL CONFIGURATION
+# BOOT N ASS // OPENING CRAWL CONFIGURATION
 # Edit this file anytime to customize the opening story crawl!
 
 EPISODE: EMERGENCY BROADCAST

@@ -1,4 +1,5 @@
 import { DIFFICULTIES, type DifficultyId, type GamePhase, type GameState } from '../engine/GameState';
+import { DesktopBridge } from '../engine/DesktopBridge';
 import type { LevelConfig } from '../levels/LevelSchema';
 import type { LevelLoadError } from '../levels/LevelLoader';
 import { Leaderboard } from '../engine/Leaderboard';
@@ -30,6 +31,8 @@ export interface HudCallbacks {
   onResume: () => void;
   onToggleMouseAim: () => void;
   onToggleMute: () => void;
+  onToggleFullscreen: () => void;
+  onQuitDesktop: () => void;
   onToggleNintendoLayout: () => void;
   onTestRumble: () => string;
   onUiHover: () => void;
@@ -79,6 +82,7 @@ export class HUD {
   private bossNameEl: HTMLElement | null = null;
   private bossPhaseEl: HTMLElement | null = null;
   private bossHpFill: HTMLElement | null = null;
+  private bossHpLag: HTMLElement | null = null;
   private bannerEl: HTMLElement | null = null;
   private commsBox: HTMLElement | null = null;
   private commsImg: HTMLImageElement | null = null;
@@ -88,6 +92,8 @@ export class HUD {
   private reticleFar: HTMLElement | null = null;
   private lockContainer: HTMLElement | null = null;
   private damageFlashEl: HTMLElement | null = null;
+  private screenFlashEl: HTMLElement | null = null;
+  private stampLayerEl: HTMLElement | null = null;
   private energyVignetteEl: HTMLElement | null = null;
   private popupContainer: HTMLElement | null = null;
   private hitConfirmTimer = 0;
@@ -341,13 +347,13 @@ export class HUD {
 
   public async loadStoryFile(): Promise<StoryCrawlData> {
     const fallback: StoryCrawlData = {
-      episode: 'TRANSMISSION IV',
-      title: 'STARBURST',
-      subtitle: 'THE NEON FRONTIER',
+      episode: 'EMERGENCY BROADCAST',
+      title: 'BOOT N ASS',
+      subtitle: 'GALACTIC RED ALERT',
       speed: 1.0,
       paragraphs: [
-        'Across the Outer Rim, the rogue Hyper-Grid has seized the ancient relay trenches.',
-        'Launch the prototype VANGUARD-X interceptor and reclaim the Neon Frontier.',
+        'An armada of trash-talking space robots has invaded the Neon Frontier.',
+        'Lock on. Barrel roll. Put boot in their ass first.',
       ],
     };
 
@@ -453,7 +459,7 @@ export class HUD {
     }
 
     if (phase === 'Paused') {
-      this.renderPauseOverlay();
+      this.renderPauseOverlay(state);
       return;
     }
 
@@ -473,20 +479,26 @@ export class HUD {
   }
 
   private renderBootStart(): void {
+    const isDesktop = DesktopBridge.isDesktop;
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
         <div class="title-hero-card">
           <div class="game-logo" style="margin-bottom:8px;">BOOT N ASS</div>
-          <div class="game-tagline" style="margin-bottom:38px;">GALACTIC ARCADE SPACE SHOOTER</div>
-          <button id="btn-boot-start" class="boot-start-btn">START</button>
-          <div style="margin-top:26px;font-family:var(--font-display);font-size:0.82rem;letter-spacing:0.26em;color:rgba(232,246,255,0.68);">
-            CLICK START &nbsp;•&nbsp; PRESS SPACE / ENTER &nbsp;•&nbsp; OR CONTROLLER [A]
+          <div class="game-tagline" style="margin-bottom:36px;">GALACTIC ARCADE SPACE SHOOTER</div>
+          <button id="btn-boot-start" class="boot-start-btn">PRESS START</button>
+          <div style="margin-top:26px;font-family:var(--font-display);font-size:0.8rem;letter-spacing:0.24em;color:rgba(232,246,255,0.68);">
+            CLICK START &nbsp;•&nbsp; SPACE / ENTER &nbsp;•&nbsp; CONTROLLER [A]
           </div>
+        </div>
+        <div class="desktop-status-corner">
+          <span>${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB EDITION'} &nbsp;•&nbsp; F11 FULLSCREEN</span>
+          <span>v1.0.0 &nbsp;•&nbsp; SWEET PAPA TECHNOLOGIES</span>
         </div>
       </div>
     `;
     document.getElementById('btn-boot-start')?.addEventListener('click', () => this.cb.onBootStart());
+    this.bindArcadeButtonJuice();
   }
 
   private renderCrawl(story: StoryCrawlData): void {
@@ -508,7 +520,7 @@ export class HUD {
             </div>
           </div>
         </div>
-        <div class="crawl-hint">CONFIGURABLE VIA public/story.txt &nbsp;|&nbsp; CLICK OR PRESS ANY BUTTON IF AUDIO IS PAUSED</div>
+        <div class="crawl-hint">INCOMING TRANSMISSION &nbsp;|&nbsp; PRESS [SPACE / A] TO SKIP</div>
         <div class="crawl-controls">
           <button id="btn-crawl-vo" class="neon-btn small secondary">REPLAY AUDIO</button>
           <button id="btn-crawl-skip" class="neon-btn small">SKIP CRAWL [SPACE / A]</button>
@@ -531,53 +543,44 @@ export class HUD {
   private renderTitle(state: GameState): void {
     const diffCfg = state.difficultyConfig;
     const bucks = this.metaRef ? this.metaRef.data.bootBucks : 0;
+    const isDesktop = DesktopBridge.isDesktop;
+
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
-        <div class="title-hero-card">
-          <div class="game-logo">BOOT N ASS</div>
-          <div class="game-tagline" style="margin-bottom:14px;">ON-RAILS NEON ARCADE SHOOTER &nbsp;•&nbsp; ${bucks.toLocaleString()} BB</div>
-          <div class="difficulty-bar">
+        <div class="title-panel">
+          <div class="game-logo" style="font-size:clamp(2.8rem, 7vw, 5.2rem);">BOOT N ASS</div>
+          <div class="title-meta-row">
+            <span class="meta-chip">ON-RAILS NEON SPACE SHOOTER</span>
+            <span class="meta-chip gold">${bucks.toLocaleString()} BOOT BUCKS</span>
+          </div>
+
+          <div class="difficulty-bar" style="margin-bottom:8px;">
             <button class="diff-pill ${state.difficulty === 'rookie' ? 'active' : ''}" data-diff="rookie">ROOKIE</button>
             <button class="diff-pill ${state.difficulty === 'ace' ? 'active' : ''}" data-diff="ace">ACE ★</button>
             <button class="diff-pill ${state.difficulty === 'maximum' ? 'active' : ''}" data-diff="maximum">MAXIMUM BOOT-N-ASS</button>
           </div>
-          <div class="diff-desc">${this.escapeHtml(diffCfg.description)}</div>
-          <div class="menu-actions" style="margin-bottom:16px;">
-            <button id="btn-start" class="neon-btn">LAUNCH CAMPAIGN</button>
-            <button id="btn-hangar" class="neon-btn secondary">HANGAR (${bucks} BB)</button>
+          <div class="diff-desc" style="margin-bottom:20px;">${this.escapeHtml(diffCfg.description)}</div>
+
+          <button id="btn-start" class="neon-btn primary-launch-btn">LAUNCH CAMPAIGN</button>
+
+          <div class="menu-grid-2x2">
+            <button id="btn-hangar" class="neon-btn secondary">ZORP'S HANGAR (${bucks.toLocaleString()} BB)</button>
             <button id="btn-levels" class="neon-btn secondary">SELECT SECTOR</button>
             <button id="btn-leaderboard" class="neon-btn secondary">LEADERBOARD</button>
-            <button id="btn-story" class="neon-btn secondary">OPENING CRAWL</button>
+            <button id="btn-options" class="neon-btn secondary">OPTIONS &amp; CONTROLS</button>
           </div>
-          <div class="menu-actions" style="margin-bottom:14px;">
-            <button id="btn-mouse-aim" class="neon-btn small secondary">
-              MOUSE AIM: ${state.mouseAimEnabled ? 'ON' : 'OFF'}
-            </button>
-            <button id="btn-mute" class="neon-btn small secondary">
-              AUDIO: ${state.muted ? 'MUTED' : 'ON'}
-            </button>
-            <button id="btn-pad-layout" class="neon-btn small secondary">
-              PAD A/B: ${this.nintendoLayout ? '8BITDO / NINTENDO' : 'XBOX / PS'}
-            </button>
-            <button id="btn-test-rumble" class="neon-btn small secondary">
-              TEST RUMBLE
-            </button>
+
+          <div class="menu-footer-row">
+            <button id="btn-story" class="neon-btn small secondary">OPENING CRAWL</button>
+            <button id="btn-fullscreen" class="neon-btn small secondary">FULLSCREEN [F11]</button>
+            <button id="btn-mute" class="neon-btn small secondary">AUDIO: ${state.muted ? 'MUTED' : 'ON'}</button>
+            ${isDesktop ? '<button id="btn-quit" class="neon-btn small secondary danger-subtle">QUIT TO DESKTOP</button>' : ''}
           </div>
-          <div class="pad-status-bar">
-            <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
-            <span id="rumble-feedback" class="rumble-msg"></span>
-          </div>
-          <div class="controls-grid">
-            <div class="control-item"><span class="control-key">WASD / L-STICK</span> Fly &amp; Bank</div>
-            <div class="control-item"><span class="control-key">SPACE / RT / A</span> Rapid Plasma</div>
-            <div class="control-item"><span class="control-key">SHIFT / LT / B</span> Quad Lock-On</div>
-            <div class="control-item"><span class="control-key">Q/E / LB/RB</span> Barrel Roll Deflect</div>
-            <div class="control-item"><span class="control-key">R / Y</span> Somersault EMP Flip</div>
-            <div class="control-item"><span class="control-key">B / X</span> Nova Smart Bomb</div>
-            <div class="control-item"><span class="control-key">F / L3</span> Boost &nbsp; <span class="control-key">C / R3</span> Brake</div>
-            <div class="control-item"><span class="control-key">BLUETOOTH PAD</span> Native Rumble + Sticks</div>
-          </div>
+        </div>
+        <div class="desktop-status-corner">
+          <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
+          <span>v1.0.0 &nbsp;•&nbsp; ${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB'}</span>
         </div>
       </div>
     `;
@@ -592,16 +595,13 @@ export class HUD {
     document.getElementById('btn-hangar')?.addEventListener('click', () => this.cb.onOpenHangar('Title'));
     document.getElementById('btn-levels')?.addEventListener('click', () => this.cb.onOpenLevelSelect());
     document.getElementById('btn-leaderboard')?.addEventListener('click', () => this.renderLeaderboardModal(state));
+    document.getElementById('btn-options')?.addEventListener('click', () => this.renderOptionsModal(state));
     document.getElementById('btn-story')?.addEventListener('click', () => this.cb.onReplayCrawl());
-    document.getElementById('btn-mouse-aim')?.addEventListener('click', () => this.cb.onToggleMouseAim());
+    document.getElementById('btn-fullscreen')?.addEventListener('click', () => this.cb.onToggleFullscreen());
     document.getElementById('btn-mute')?.addEventListener('click', () => this.cb.onToggleMute());
-    document.getElementById('btn-pad-layout')?.addEventListener('click', () => this.cb.onToggleNintendoLayout());
-    document.getElementById('btn-test-rumble')?.addEventListener('click', () => {
-      const msg = this.cb.onTestRumble();
-      const el = document.getElementById('rumble-feedback');
-      if (el) el.textContent = msg;
-    });
+    document.getElementById('btn-quit')?.addEventListener('click', () => this.cb.onQuitDesktop());
     this.bindArcadeButtonJuice();
+
     // Default gamepad focus to LAUNCH CAMPAIGN
     const launchBtn = document.getElementById('btn-start') as HTMLButtonElement | null;
     if (launchBtn) {
@@ -609,6 +609,75 @@ export class HUD {
       this.focusedButtonIdx = Math.max(0, all.indexOf(launchBtn));
       launchBtn.classList.add('gamepad-focus');
     }
+  }
+
+  private renderOptionsModal(state: GameState): void {
+    this.root.innerHTML = `
+      <div class="menu-screen interactive">
+        <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
+        <div class="options-modal-card">
+          <div class="tally-title" style="margin-bottom:4px;">OPTIONS &amp; FLIGHT CONTROLS</div>
+          <div style="color:var(--cyan);font-size:0.85rem;letter-spacing:0.14em;margin-bottom:10px;">SETTINGS SAVE AUTOMATICALLY</div>
+
+          <div class="options-grid">
+            <button id="opt-mute" class="neon-btn small secondary">AUDIO: ${state.muted ? 'MUTED' : 'ON'}</button>
+            <button id="opt-mouse" class="neon-btn small secondary">MOUSE AIM: ${state.mouseAimEnabled ? 'ON' : 'OFF'}</button>
+            <button id="opt-fullscreen" class="neon-btn small secondary">TOGGLE FULLSCREEN [F11]</button>
+            <button id="opt-pad-layout" class="neon-btn small secondary">
+              PAD A/B: ${this.nintendoLayout ? 'SWAPPED (EAST=FIRE)' : 'STANDARD (SOUTH=FIRE)'}
+            </button>
+            <button id="opt-rumble" class="neon-btn small secondary">TEST CONTROLLER RUMBLE</button>
+            <button id="opt-reset" class="neon-btn small secondary danger-subtle">RESET SAVE DATA</button>
+          </div>
+
+          <div class="pad-status-bar" style="margin-bottom:16px;">
+            <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
+            <span id="rumble-feedback" class="rumble-msg"></span>
+          </div>
+
+          <div class="controls-grid" style="margin-bottom:20px;">
+            <div class="control-item"><span class="control-key">WASD / L-STICK</span> Fly &amp; Bank</div>
+            <div class="control-item"><span class="control-key">SPACE / RT / A</span> Rapid Plasma</div>
+            <div class="control-item"><span class="control-key">SHIFT / LT / B</span> Homing Lock-On</div>
+            <div class="control-item"><span class="control-key">Q/E / LB/RB</span> Barrel Roll Deflect</div>
+            <div class="control-item"><span class="control-key">R / Y</span> Somersault EMP Flip</div>
+            <div class="control-item"><span class="control-key">B / X</span> Nova Smart Bomb</div>
+            <div class="control-item"><span class="control-key">F / L3</span> Boost &nbsp; <span class="control-key">C / R3</span> Brake</div>
+            <div class="control-item"><span class="control-key">ESC / START</span> Pause &nbsp; <span class="control-key">F11</span> Fullscreen</div>
+          </div>
+
+          <button id="opt-back" class="neon-btn">BACK TO BRIDGE</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('opt-mute')?.addEventListener('click', () => {
+      this.cb.onToggleMute();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-mouse')?.addEventListener('click', () => {
+      this.cb.onToggleMouseAim();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-fullscreen')?.addEventListener('click', () => this.cb.onToggleFullscreen());
+    document.getElementById('opt-pad-layout')?.addEventListener('click', () => {
+      this.cb.onToggleNintendoLayout();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-rumble')?.addEventListener('click', () => {
+      const msg = this.cb.onTestRumble();
+      const el = document.getElementById('rumble-feedback');
+      if (el) el.textContent = msg;
+    });
+    document.getElementById('opt-reset')?.addEventListener('click', () => {
+      if (window.confirm('Reset all Boot Bucks & Hangar upgrades to zero?')) {
+        this.cb.onResetSave();
+        this.renderOptionsModal(state);
+      }
+    });
+    document.getElementById('opt-back')?.addEventListener('click', () => this.renderTitle(state));
+    this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   private renderHangar(state: GameState): void {
@@ -737,7 +806,9 @@ export class HUD {
     this.root.innerHTML = `
       <div class="hud-layer">
         <div class="damage-flash" id="damage-flash"></div>
+        <div class="screen-flash" id="screen-flash"></div>
         <div class="energy-vignette" id="energy-vignette"></div>
+        <div class="arcade-stamp-layer" id="arcade-stamp-layer"></div>
         <div id="popup-container"></div>
 
         <div class="hud-top-left">
@@ -759,7 +830,11 @@ export class HUD {
               <span id="boss-name">BOSS</span>
               <span id="boss-phase">PHASE 1</span>
             </div>
-            <div class="boss-hp-track"><div class="boss-hp-fill" id="boss-hp-fill" style="width:100%"></div></div>
+            <div class="boss-hp-track">
+              <div class="boss-hp-lag" id="boss-hp-lag" style="width:100%"></div>
+              <div class="boss-hp-fill" id="boss-hp-fill" style="width:100%"></div>
+              <div class="boss-hp-notch"></div>
+            </div>
           </div>
         </div>
 
@@ -809,6 +884,7 @@ export class HUD {
     this.bossNameEl = document.getElementById('boss-name');
     this.bossPhaseEl = document.getElementById('boss-phase');
     this.bossHpFill = document.getElementById('boss-hp-fill');
+    this.bossHpLag = document.getElementById('boss-hp-lag');
     this.bannerEl = document.getElementById('hud-banner');
     this.tutorialPromptEl = document.getElementById('tutorial-prompt');
     this.commsBox = document.getElementById('comms-box');
@@ -819,6 +895,8 @@ export class HUD {
     this.reticleFar = document.getElementById('reticle-far');
     this.lockContainer = document.getElementById('lock-container');
     this.damageFlashEl = document.getElementById('damage-flash');
+    this.screenFlashEl = document.getElementById('screen-flash');
+    this.stampLayerEl = document.getElementById('arcade-stamp-layer');
     this.energyVignetteEl = document.getElementById('energy-vignette');
     this.popupContainer = document.getElementById('popup-container');
     this.mousePill = document.getElementById('pill-mouse');
@@ -867,9 +945,11 @@ export class HUD {
     if (this.bossWrap && this.bossNameEl && this.bossPhaseEl && this.bossHpFill) {
       this.bossWrap.style.display = bossInfo.active ? 'block' : 'none';
       if (bossInfo.active) {
+        const w = `${Math.max(0, Math.min(100, bossInfo.hpPct * 100))}%`;
         this.bossNameEl.textContent = bossInfo.name;
         this.bossPhaseEl.textContent = `PHASE ${bossInfo.phase}`;
-        this.bossHpFill.style.width = `${Math.max(0, Math.min(100, bossInfo.hpPct * 100))}%`;
+        this.bossHpFill.style.width = w;
+        if (this.bossHpLag) this.bossHpLag.style.width = w;
       }
     }
 
@@ -959,6 +1039,33 @@ export class HUD {
     this.energyVignetteEl?.classList.toggle('turbo', active);
   }
 
+  public setCriticalHull(critical: boolean, mayday = false): void {
+    this.energyVignetteEl?.classList.toggle('critical-hull', critical && !mayday);
+    this.energyVignetteEl?.classList.toggle('mayday', mayday);
+  }
+
+  public triggerScreenFlash(kind: 'white' | 'death' | 'nova' | 'gold'): void {
+    if (!this.screenFlashEl) return;
+    this.screenFlashEl.className = `screen-flash ${kind} active`;
+    // Force reflow so rapid consecutive flashes re-trigger cleanly
+    void this.screenFlashEl.offsetWidth;
+    requestAnimationFrame(() => {
+      this.screenFlashEl?.classList.remove('active');
+    });
+  }
+
+  public showArcadeStamp(text: string, variant: 'kill' | 'death' | 'clear' | 'warp'): void {
+    if (!this.stampLayerEl) return;
+    const el = document.createElement('div');
+    el.className = `arcade-stamp ${variant}`;
+    el.textContent = text;
+    this.stampLayerEl.innerHTML = '';
+    this.stampLayerEl.appendChild(el);
+    window.setTimeout(() => {
+      if (el.parentNode === this.stampLayerEl) el.remove();
+    }, 1500);
+  }
+
   public triggerHitMarker(): void {
     if (!this.reticleNear) return;
     this.reticleNear.classList.add('hit-confirm');
@@ -1011,26 +1118,38 @@ export class HUD {
     this.damageFlashTimer = 0.22;
   }
 
-  private renderPauseOverlay(): void {
+  private renderPauseOverlay(state?: GameState): void {
     const existing = document.getElementById('pause-modal');
-    if (existing) return;
+    if (existing) existing.remove();
+    const isDesktop = DesktopBridge.isDesktop;
     const modal = document.createElement('div');
     modal.id = 'pause-modal';
     modal.className = 'menu-screen interactive';
     modal.innerHTML = `
-      <div class="tally-card">
+      <div class="tally-card" style="max-width:440px;">
         <div class="tally-title">SYSTEMS PAUSED</div>
-        <div class="menu-actions" style="margin-bottom:0;">
+        <div class="pause-stack">
           <button id="btn-resume" class="neon-btn">RESUME FLIGHT</button>
           <button id="btn-pause-retry" class="neon-btn secondary">RESTART SECTOR</button>
+          <button id="btn-pause-fs" class="neon-btn small secondary">TOGGLE FULLSCREEN [F11]</button>
+          <button id="btn-pause-mute" class="neon-btn small secondary">AUDIO: ${state?.muted ? 'MUTED' : 'ON'}</button>
           <button id="btn-pause-menu" class="neon-btn secondary">MAIN BRIDGE</button>
+          ${isDesktop ? '<button id="btn-pause-quit" class="neon-btn small secondary danger-subtle">QUIT TO DESKTOP</button>' : ''}
         </div>
       </div>
     `;
     this.root.appendChild(modal);
     document.getElementById('btn-resume')?.addEventListener('click', () => this.cb.onResume());
     document.getElementById('btn-pause-retry')?.addEventListener('click', () => this.cb.onRetryLevel());
+    document.getElementById('btn-pause-fs')?.addEventListener('click', () => this.cb.onToggleFullscreen());
+    document.getElementById('btn-pause-mute')?.addEventListener('click', () => {
+      this.cb.onToggleMute();
+      this.renderPauseOverlay(state);
+    });
     document.getElementById('btn-pause-menu')?.addEventListener('click', () => this.cb.onBackToTitle());
+    document.getElementById('btn-pause-quit')?.addEventListener('click', () => this.cb.onQuitDesktop());
+    this.bindArcadeButtonJuice();
+    this.resetMenuFocus();
   }
 
   public removePauseOverlay(): void {

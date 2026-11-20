@@ -1,0 +1,348 @@
+name: Release
+
+# Push a version tag on main (e.g. `git tag -a v1.0.0 -m "BOOT N ASS v1.0.0" && git push origin v1.0.0`)
+# to build, sign, notarize, and publish native desktop installers for:
+#   - macOS Apple Silicon (arm64) & Intel (x64) — Developer ID signed + notarized + stapled .dmg
+#   - Windows (x64) — Azure Trusted Signing (OIDC) signed NSIS installer
+#   - Linux (x64) — .deb and .AppImage
+#
+# Signing credentials (configured via scripts/setup-ci.sh):
+#   macOS    secrets: APPLE_CERT_P12, APPLE_CERT_PASSWORD, APPLE_TEAM_ID,
+#                     ASC_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID
+#   Windows  variables: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#            environment: `release` (trusted by Azure AD OIDC federated credential)
+# Missing credentials degrade cleanly to an unsigned build with a warning.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build/re-publish (e.g. v1.0.0)"
+        required: true
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      sha: ${{ steps.v.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - id: v
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] \
+            || { echo "::error::$TAG is not a vX.Y.Z[-pre] tag"; exit 1; }
+          SHA=$(git rev-parse HEAD)
+          VERSION="${TAG#v}"
+          PRE=false; [[ "$VERSION" == *-* ]] && PRE=true
+          { echo "tag=$TAG"; echo "version=$VERSION"; echo "prerelease=$PRE"; echo "sha=$SHA"; } >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG ($VERSION, prerelease=$PRE) from $SHA"
+
+  macos:
+    name: macOS (${{ matrix.label }})
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, arch: arm64, label: Apple Silicon }
+          - { runner: macos-15-intel, arch: x64, label: Intel }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "${{ needs.meta.outputs.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Sync version
+        run: node scripts/set-version.mjs "${{ needs.meta.outputs.version }}"
+
+      - name: Import Developer ID certificate
+        id: cert
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERT_P12:-}" ]; then
+            echo "::warning::no APPLE_CERT_P12 secret — macOS build will be unsigned"
+            echo "identity=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASS=$(openssl rand -hex 24)
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASS" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          ID=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+          [ -n "$ID" ] || { echo "::error::certificate holds no Developer ID Application identity"; exit 1; }
+          echo "identity=$ID" >> "$GITHUB_OUTPUT"
+          echo "Signing as: $ID"
+
+      - name: App Store Connect API key
+        id: asc
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASC_KEY_P8:-}" ] || [ -z "${{ steps.cert.outputs.identity }}" ]; then
+            echo "::warning::no notarization credential — macOS build will not be notarized"
+            echo "path=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s' "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          echo "path=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign and notarize app
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ steps.cert.outputs.identity }}
+          APPLE_API_KEY_PATH: ${{ steps.asc.outputs.path }}
+          APPLE_API_KEY: ${{ secrets.ASC_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          npm ci
+          [ -n "$APPLE_API_KEY_PATH" ] || unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_ISSUER
+          [ -n "$APPLE_SIGNING_IDENTITY" ] || unset APPLE_SIGNING_IDENTITY
+          npx tauri build --bundles app,dmg
+
+      - name: Sign, notarize and staple DMG
+        if: steps.asc.outputs.path != ''
+        env:
+          IDENTITY: ${{ steps.cert.outputs.identity }}
+          KEY: ${{ steps.asc.outputs.path }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
+          codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+          xcrun notarytool submit "$DMG" --key "$KEY" --key-id "$KEY_ID" --issuer "$ISSUER" --wait --timeout 60m
+          xcrun stapler staple "$DMG"
+          APP="src-tauri/target/release/bundle/macos/BOOT N ASS.app"
+          spctl --assess --type execute -vv "$APP"
+          xcrun stapler validate "$DMG"
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p release-dist
+          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
+          cp "$DMG" "release-dist/BOOT-N-ASS-${{ needs.meta.outputs.version }}-macos-${{ matrix.arch }}.dmg"
+          ls -lh release-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "macos-${{ matrix.arch }}"
+          path: release-dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64)
+    needs: meta
+    runs-on: windows-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "${{ needs.meta.outputs.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Sync version
+        shell: bash
+        run: node scripts/set-version.mjs "${{ needs.meta.outputs.version }}"
+
+      - name: Azure login (OIDC)
+        id: az
+        if: vars.AZURE_CLIENT_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Microsoft sign tool
+        if: steps.az.outcome == 'success'
+        shell: bash
+        run: dotnet tool install --global sign --prerelease
+
+      - name: Build (and sign via Azure Trusted Signing)
+        shell: bash
+        env:
+          SIGNED: ${{ steps.az.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          npm ci
+          ARGS=(--bundles nsis)
+          if [ "$SIGNED" = true ]; then
+            ARGS=(--config src-tauri/tauri.windows-sign.conf.json --bundles nsis)
+          else
+            echo "::warning::no Azure login — Windows build will be unsigned"
+          fi
+          npx tauri build "${ARGS[@]}"
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-dist
+          SETUP=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          cp "$SETUP" "release-dist/BOOT-N-ASS-${{ needs.meta.outputs.version }}-windows-x64-setup.exe"
+          ls -lh release-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: release-dist/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux (x64)
+    needs: meta
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "${{ needs.meta.outputs.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: System libraries (WebKitGTK + GStreamer media codecs)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev file \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+
+      - name: Sync version
+        run: node scripts/set-version.mjs "${{ needs.meta.outputs.version }}"
+
+      - name: Build .deb and .AppImage
+        env:
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: "libsystemd.so*;libudev.so*;libdbus-1.so*;libwayland-*.so*;libepoxy.so*;libnghttp2.so*"
+        run: |
+          set -euo pipefail
+          npm ci
+          npx tauri build --bundles deb,appimage
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p release-dist
+          V="${{ needs.meta.outputs.version }}"
+          cp src-tauri/target/release/bundle/deb/*.deb "release-dist/BOOT-N-ASS-$V-linux-amd64.deb"
+          cp src-tauri/target/release/bundle/appimage/*.AppImage "release-dist/BOOT-N-ASS-$V-linux-x86_64.AppImage"
+          ls -lh release-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: release-dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [meta, macos, windows, linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "${{ needs.meta.outputs.sha }}"
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-dist
+          pattern: "{macos-*,windows,linux}"
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: release-dist
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          PRE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          ## BOOT N ASS $VERSION
+
+          **3D On-Rails Neon Arcade Space Shooter** — Desktop Edition (macOS, Windows & Linux).
+
+          ### Downloads
+          | Platform | File | Signing |
+          | --- | --- | --- |
+          | **macOS (Apple Silicon)** | \`BOOT-N-ASS-$VERSION-macos-arm64.dmg\` | Apple Developer ID Signed & Notarized |
+          | **macOS (Intel)** | \`BOOT-N-ASS-$VERSION-macos-x64.dmg\` | Apple Developer ID Signed & Notarized |
+          | **Windows (x64)** | \`BOOT-N-ASS-$VERSION-windows-x64-setup.exe\` | Azure Trusted Signing Authenticode |
+          | **Linux (Ubuntu/Debian)** | \`BOOT-N-ASS-$VERSION-linux-amd64.deb\` | Verify via \`SHA256SUMS.txt\` |
+          | **Linux (Universal)** | \`BOOT-N-ASS-$VERSION-linux-x86_64.AppImage\` | Verify via \`SHA256SUMS.txt\` |
+
+          ### Highlights
+          - **3 High-Octane Neon Sectors** with dynamic curved rail tracks, cosmic landmarks, racing slalom gates, and tactical enemy formations.
+          - **3 Distinct Multi-Phase Bosses**: Aegis Dreadnought (shielded wing turrets + laser sweeps), Octa-Core Sentinel (prism shields shattered by barrel-roll deflections + rotating X-cross laser cage), and Solaris Leviathan (7-segment weaving cyber-dragon).
+          - **Full Animated Cutscenes, Original Synthwave Soundtrack & 65+ Voice Lines** — including dramatic pilot death spirals, 3D ship wreckage explosions, and multi-stage boss meltdowns.
+          - **Zorp's Hangar Meta-Progression**, 3 difficulty modes (**Rookie**, **Ace**, **Maximum Boot-N-Ass**), S-Rank target checklist, and Local Arcade Leaderboard.
+          - **Native Desktop Polish**: 100% offline bundled fonts & assets, \`F11\` fullscreen toggle, universal Bluetooth/USB gamepad & rumble support.
+
+          ---
+          Verify downloads with \`SHA256SUMS.txt\`.
+          EOF
+
+          FLAGS=(--title "BOOT N ASS $TAG" --notes-file notes.md --verify-tag)
+          [ "$PRE" = true ] && FLAGS+=(--prerelease)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-dist/* --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" release-dist/* "${FLAGS[@]}"
+          fi
+          gh release view "$TAG"

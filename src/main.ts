@@ -1,7 +1,14 @@
+import '@fontsource/orbitron/500.css';
+import '@fontsource/orbitron/700.css';
+import '@fontsource/orbitron/900.css';
+import '@fontsource/rajdhani/500.css';
+import '@fontsource/rajdhani/600.css';
+import '@fontsource/rajdhani/700.css';
 import './style.css';
 import * as THREE from 'three';
 import { Renderer } from './render/Renderer';
 import { GameState } from './engine/GameState';
+import { DesktopBridge } from './engine/DesktopBridge';
 import { MetaProgression } from './engine/MetaProgression';
 import { InputManager } from './engine/InputManager';
 import { AudioSynth, type VoicePriority } from './engine/AudioSynth';
@@ -114,9 +121,34 @@ const BANTER: Record<string, BanterLine[]> = {
     { voId: 'game-over-2', speaker: 'wingman', text: "Blown to space dust! Shake it off, pilot, and get back in there!" },
     { voId: 'game-over-3', speaker: 'boss', text: "MISSION COMPLETE. I PUT BOOT N ASS. TRY AGAIN, HUMAN." },
   ],
+  pilotDeath: [
+    { voId: 'pilot-death-1', speaker: 'wingman', text: "MAYDAY! MAYDAY! I'M GOING DOWN! NOOOOOOOOO! TELL MY MOM I BEAT MY HIGH SCORE!!" },
+    { voId: 'pilot-death-2', speaker: 'wingman', text: "WHOA-WHOA-WHOA, I'M SPINNING OUT! NOOOOOOOOO! NOT MY SPACE TACOS!!" },
+    { voId: 'pilot-death-3', speaker: 'wingman', text: "CRITICAL FAILURE! EJECT! WHY IS THE EJECT BUTTON STUCK?! NOOOOOOOOO!!" },
+    { voId: 'pilot-death-4', speaker: 'wingman', text: "OH CRAP! BOTH ENGINES ARE ON FIRE! NOOOOOOOOO! I JUST WAXED THIS STARFIGHTER!!" },
+  ],
+  bossDeath: [
+    { voId: 'boss-death-1', speaker: 'boss', text: "SYSTEM FAILURE! MY SHINY METAL ASS! YOU ACTUALLY PUT BOOT IN MY ASS! NOOOOOOOOO!" },
+    { voId: 'boss-death-2', speaker: 'boss', text: "CRITICAL MELTDOWN! IMPOSSIBLE! TELL THE ALIEN EMPEROR I TRIED! NOOOOOOOOO!" },
+    { voId: 'boss-death-3', speaker: 'boss', text: "ERROR 404! ASS KICKED BEYOND REPAIR! SELF-DESTRUCTING! NOOOOOOOOO!" },
+  ],
+  gruntPanic: [
+    { voId: 'grunt-panic-1', speaker: 'grunt', text: "WAIT A SECOND! HE JUST BLEW THE BOSS'S ARMOR OFF! WE ARE ALL GONNA DIE!" },
+    { voId: 'grunt-panic-2', speaker: 'grunt', text: "WHO HIRED THIS CRAZY HUMAN?! RUN FOR THE ESCAPE PODS!" },
+    { voId: 'grunt-panic-3', speaker: 'grunt', text: "HE'S BOUNCING OUR OWN LASERS BACK AT US! I QUIT! I'M GOING BACK TO SPACE COLLEGE!" },
+  ],
+  zorpSupply: [
+    { voId: 'zorp-supply-1', speaker: 'mechanic', text: "Zorp Express delivery! Catch that glowing shield ring before the boss eats you!" },
+    { voId: 'zorp-supply-2', speaker: 'mechanic', text: "Incoming care package! Fresh weapon crate comin' down the lane—grab it!" },
+    { voId: 'zorp-supply-3', speaker: 'mechanic', text: "Look alive, hotshot! Tossed you some shiny boss-busting upgrades!" },
+  ],
+  novaBomb: [
+    { voId: 'nova-bomb-1', speaker: 'wingman', text: "Nova bomb away! Say goodnight, space clowns!" },
+    { voId: 'nova-bomb-2', speaker: 'commander', text: "Clearing the whole dang screen! Taste pure neon sunshine, losers!" },
+  ],
 };
 
-class StarburstGame {
+class BootNAssGame {
   private readonly renderer: Renderer;
   private readonly state = new GameState();
   private readonly meta = new MetaProgression();
@@ -158,16 +190,26 @@ class StarburstGame {
   private promptBombShown = false;
   private activeTutorialPrompt: 'boost' | 'roll' | 'bomb' | null = null;
 
-  // Game feel ("Juice") + Arcade Racer Turbo
+  // Game feel ("Juice"), Cinematic Sequences & Arcade Racer Turbo
   private hitstopTimer = 0;
   private screenShake = 0;
   private turboBoostTimer = 0;
   private lowShieldWarned = false;
   private bossClearDelay = 0;
+  private bossVictoryElapsed = 0;
+  private playerDying = false;
+  private warpEntryTimer = 0;
+  private multiKillCount = 0;
+  private multiKillWindow = 0;
+  private criticalBeepTimer = 0;
+  private criticalSparkTimer = 0;
 
-  // Dynamic corridor hazards & weapon crates
+  // Dynamic corridor hazards & weapon crates + mid-boss tactical supply drops!
   private ambientHazardTimer = 2.0;
   private ambientCycle = 0;
+  private bossSupplyTimer = 8.0;
+  private bossSupplyCycle = 0;
+  private bossPartsDestroyedCount = 0;
   private attractDist = 0;
 
   // Charge Lock-On state (supports Shift/LT OR holding primary Fire for 1.0s!)
@@ -222,10 +264,13 @@ class StarburstGame {
       onResetSave: () => {
         this.meta.resetSave();
         this.audio.playUiConfirm();
-        this.hud.renderPhase('Hangar', this.state, this.levels);
+        if (this.state.phase === 'Hangar') {
+          this.hud.renderPhase('Hangar', this.state, this.levels);
+        }
       },
       onSelectDifficulty: (diff) => {
         this.state.difficulty = diff;
+        this.state.saveSettings();
         this.hud.renderPhase('Title', this.state, this.levels);
       },
       onReplayCrawl: () => {
@@ -267,16 +312,24 @@ class StarburstGame {
       },
       onToggleMouseAim: () => {
         this.state.mouseAimEnabled = !this.state.mouseAimEnabled;
-        if (this.state.phase === 'Title') {
+        this.state.saveSettings();
+        if (this.state.phase === 'Title' && document.getElementById('btn-start')) {
           this.hud.renderPhase('Title', this.state, this.levels);
         }
       },
       onToggleMute: () => {
         this.state.muted = !this.state.muted;
+        this.state.saveSettings();
         this.audio.setMuted(this.state.muted);
-        if (this.state.phase === 'Title') {
+        if (this.state.phase === 'Title' && document.getElementById('btn-start')) {
           this.hud.renderPhase('Title', this.state, this.levels);
         }
+      },
+      onToggleFullscreen: () => {
+        void DesktopBridge.toggleFullscreen();
+      },
+      onQuitDesktop: () => {
+        void DesktopBridge.quitApp();
       },
       onToggleNintendoLayout: () => {
         this.input.setNintendoLayout(!this.input.nintendoFaceLayout);
@@ -286,7 +339,7 @@ class StarburstGame {
           this.input.gamepadName,
           this.input.nintendoFaceLayout
         );
-        if (this.state.phase === 'Title') {
+        if (this.state.phase === 'Title' && document.getElementById('btn-start')) {
           this.hud.renderPhase('Title', this.state, this.levels);
         }
       },
@@ -319,6 +372,11 @@ class StarburstGame {
     window.addEventListener('pointerdown', unlockCrawlGesture);
 
     window.addEventListener('keydown', (e) => {
+      if (e.code === 'F11') {
+        e.preventDefault();
+        void DesktopBridge.toggleFullscreen();
+        return;
+      }
       if (this.hud.isCutscenePlaying) {
         // Cutscene skip is strictly Hold-to-Skip (0.6s after 1.0s lockout) handled in step()
         if (e.code === 'Space' || e.code === 'Escape' || e.code === 'Enter') {
@@ -343,13 +401,16 @@ class StarburstGame {
       } else if (this.state.phase === 'Playing') {
         if (e.code === 'KeyM') {
           this.state.mouseAimEnabled = !this.state.mouseAimEnabled;
+          this.state.saveSettings();
         } else if (e.code === 'KeyN') {
           this.state.muted = !this.state.muted;
+          this.state.saveSettings();
           this.audio.setMuted(this.state.muted);
         }
       }
     });
 
+    this.audio.setMuted(this.state.muted);
     this.hud.setMetaProgression(this.meta);
     void this.boot();
   }
@@ -436,6 +497,17 @@ class StarburstGame {
     }
   }
 
+  /** Immediately interrupts routine chatter for dramatic set-piece moments (pilot death scream, boss meltdown)! */
+  private playDramaticBanter(category: keyof typeof BANTER, duration = 4.0): void {
+    const list = BANTER[category];
+    if (!list || list.length === 0) return;
+    const idx = this.drawFromShuffleBag(category, list.length);
+    const line = list[idx];
+    this.audio.stopVO();
+    this.hud.showComms(line.speaker, line.text, duration);
+    void this.audio.playVO(line.voId, false, true);
+  }
+
   private handleBootStart(): void {
     this.audio.unlock();
     const params = new URLSearchParams(window.location.search);
@@ -515,12 +587,22 @@ class StarburstGame {
     this.state.phase = 'Playing';
     this.lowShieldWarned = false;
     this.bossClearDelay = 0;
+    this.bossVictoryElapsed = 0;
+    this.playerDying = false;
+    this.warpEntryTimer = 1.15;
+    this.multiKillCount = 0;
+    this.multiKillWindow = 0;
+    this.criticalBeepTimer = 0;
+    this.criticalSparkTimer = 0;
     this.hitstopTimer = 0;
     this.screenShake = 0;
     this.turboBoostTimer = 0;
     this.casualBanterCooldown = 4.0;
     this.ambientHazardTimer = 1.6;
     this.ambientCycle = 0;
+    this.bossSupplyTimer = 8.5;
+    this.bossSupplyCycle = 0;
+    this.bossPartsDestroyedCount = 0;
     this.lockedTargets = [];
     this.fireHoldTimer = 0;
 
@@ -556,11 +638,16 @@ class StarburstGame {
     this.hud.setBossCheckpoint(this.bossCheckpointDist !== null);
 
     this.hud.renderPhase('Playing', this.state, this.levels);
+    this.hud.setCriticalHull(false, false);
+    this.player.setEntryZOffset(11);
+    this.audio.playWarpEntry();
     if (startDist > 0 && this.bossCheckpointDist !== null) {
       this.hud.showBanner('BOSS CHECKPOINT // ROUND TWO!', 2.4);
+      this.hud.showArcadeStamp('ROUND TWO // ENGAGE!', 'warp');
       this.audio.playMusicTrack('boss-battle', true, 0.44, 0.78);
     } else {
       this.hud.showBanner(level.name, 2.8);
+      this.hud.showArcadeStamp(`HYPER-WARP // ${level.name}`, 'warp');
       const track =
         LEVEL_MUSIC_MAP[level.id] ??
         ['level-01-neon-canyon', 'level-02-prism-belt', 'level-03-hyper-spire'][index % 3];
@@ -585,6 +672,9 @@ class StarburstGame {
     this.input.rumble(1.0, 0.8, 350);
     this.screenShake = 1.4;
     this.hitstopTimer = 0.06;
+    this.hud.triggerScreenFlash('nova');
+    this.hud.showArcadeStamp('NOVA DETONATION!!', 'kill');
+    this.playCategoryBanter('novaBomb', 3.4, true);
     this.particles.spawnShockwave(this.player.position.clone(), 0x00f0ff, 38, 0.75);
     this.particles.spawnShockwave(this.player.position.clone(), 0xffd447, 28, 0.55);
     this.hud.showBanner('NOVA SMART BOMB DETONATED!', 1.8);
@@ -603,6 +693,7 @@ class StarburstGame {
         const killed = this.enemies.damageEnemy(e, 140);
         if (killed) {
           this.state.registerKill(e.scoreValue);
+          this.registerMultiKill();
           this.particles.burst(e.mesh.position, 22, 0xffd447, 24, 1.2, 0.65);
         }
       }
@@ -611,7 +702,7 @@ class StarburstGame {
     // Chunk active boss parts!
     if (this.boss.active) {
       for (const part of this.boss.getTargetableParts()) {
-        const res = this.boss.damagePart(part, 75);
+        const res = this.boss.damagePart(part, 115);
         this.particles.burst(res.pos, 18, 0xffd447, 24, 1.2, 0.55);
         if (res.bossDefeated) {
           this.handleBossDefeated();
@@ -621,22 +712,70 @@ class StarburstGame {
     }
   }
 
+  private registerMultiKill(): void {
+    this.multiKillCount += 1;
+    this.multiKillWindow = 1.25;
+    if (this.multiKillCount === 3) {
+      this.state.addBonusScore(300);
+      this.hud.showArcadeStamp('TRIPLE KILL! +300', 'kill');
+    } else if (this.multiKillCount === 4) {
+      this.state.addBonusScore(500);
+      this.hud.showArcadeStamp('QUAD KILL!! +500', 'kill');
+    } else if (this.multiKillCount === 5) {
+      this.state.addBonusScore(800);
+      this.hud.showArcadeStamp('MEGA KILL!! +800', 'kill');
+    } else if (this.multiKillCount === 7) {
+      this.state.addBonusScore(1500);
+      this.hud.showArcadeStamp('BOOT N ASS RAMPAGE!!!', 'kill');
+    }
+  }
+
+  private startPlayerDeathScene(): void {
+    if (this.playerDying) return;
+    this.playerDying = true;
+    this.lockedTargets = [];
+    this.audio.stopMusicTrack();
+    this.audio.playShipPowerDown();
+    this.player.startDeathSpiral();
+    this.input.rumble(0.95, 0.9, 500);
+    this.screenShake = 1.5;
+    this.hud.setCriticalHull(true, true);
+    this.hud.showBanner('MAYDAY! MAYDAY! HULL INTEGRITY ZERO!', 2.5);
+    this.hud.showArcadeStamp('MAYDAY // HULL BREACH!', 'death');
+    this.playDramaticBanter('pilotDeath', 3.6);
+  }
+
   private handleBossDefeated(): void {
     this.state.stats.bossClearTimeSec = Math.max(1, this.boss.fightElapsedSec);
-    this.hitstopTimer = 0.11;
+    this.hitstopTimer = 0.12;
     this.state.addBonusScore(4000);
     this.audio.playExplosion(true);
     this.input.rumble(1.0, 0.9, 450);
-    this.particles.burst(this.boss.root.position.clone(), 70, 0xffd447, 38, 2.0, 1.2);
-    this.particles.burst(this.boss.root.position.clone(), 50, 0x00f0ff, 32, 1.6, 1.0);
-    this.particles.spawnShockwave(this.boss.root.position.clone(), 0x00f0ff, 34, 0.85);
-    this.screenShake = 1.5;
-    this.bossClearDelay = 2.6;
+    this.hud.triggerScreenFlash('gold');
+    this.hud.setCriticalHull(false, false);
+
+    // Vaporize all remaining enemy shots & escorts into golden sparkles (zero post-mortem cheap hits!)
+    for (const p of this.projectiles.projectiles) {
+      if (p.active && p.kind === 'enemy_plasma') {
+        p.active = false;
+        this.particles.burst(p.pos, 5, 0xffd447, 14, 0.7, 0.35);
+      }
+    }
+    for (const e of this.enemies.enemies) {
+      if (e.alive) {
+        this.enemies.damageEnemy(e, 999);
+        this.particles.burst(e.mesh.position, 18, 0xffaa22, 20, 1.0, 0.55);
+      }
+    }
+
+    this.screenShake = 1.4;
+    this.bossClearDelay = 3.1;
+    this.bossVictoryElapsed = 0;
     this.bossCheckpointDist = null;
     this.hud.setBossCheckpoint(false);
     this.audio.setMusicState(false);
-    this.hud.showBanner('TARGET OBLITERATED // SECTOR CLEAR', 2.6);
-    this.playCategoryBanter('levelClear', 4.2, true);
+    this.hud.showBanner('REACTOR CRITICAL // CHAIN MELTDOWN!', 2.2);
+    this.playDramaticBanter('bossDeath', 3.4);
   }
 
   private loop = (now: number): void => {
@@ -701,6 +840,10 @@ class StarburstGame {
           this.enterTitle();
           return;
         }
+        if (this.state.phase === 'Title' && !document.getElementById('btn-start')) {
+          this.hud.renderPhase('Title', this.state, this.levels);
+          return;
+        }
         if (this.state.phase === 'Paused') {
           this.state.phase = 'Playing';
           this.hud.removePauseOverlay();
@@ -743,7 +886,7 @@ class StarburstGame {
       return;
     }
 
-    if (input.pausePressed) {
+    if (input.pausePressed && !this.playerDying && this.bossClearDelay <= 0) {
       this.state.phase = 'Paused';
       this.hud.renderPhase('Paused', this.state, this.levels);
       return;
@@ -755,9 +898,211 @@ class StarburstGame {
     }
     if (this.casualBanterCooldown > 0) this.casualBanterCooldown -= dt;
     if (this.turboBoostTimer > 0) this.turboBoostTimer -= dt;
+    if (this.multiKillWindow > 0) {
+      this.multiKillWindow -= dt;
+      if (this.multiKillWindow <= 0) this.multiKillCount = 0;
+    }
 
     const level = this.levels[this.state.currentLevelIndex];
-    const isSuperBoost = this.player.isBoosting || this.turboBoostTimer > 0;
+
+    // === CINEMATIC PLAYER DEATH SPIRAL & 3D SHIP EXPLOSION SEQUENCE (2.55s before Eject Cutscene!) ===
+    if (this.playerDying) {
+      const slowSpeed = level.baseSpeed * 0.42;
+      this.env.update(dt, slowSpeed, false, this.trackCurve);
+      this.projectiles.update(dt);
+      this.particles.update(dt, slowSpeed);
+
+      const phase = this.player.updateDeathSequence(
+        dt,
+        slowSpeed,
+        (pos, big) => {
+          this.particles.burst(pos, big ? 16 : 8, 0xff5511, big ? 18 : 12, big ? 1.15 : 0.75, 0.42);
+          this.particles.burst(pos, big ? 8 : 4, 0xffd447, 14, 0.75, 0.32);
+          if (big && Math.random() < 0.35) {
+            this.audio.playExplosion(false);
+            this.screenShake = Math.max(this.screenShake, 0.9);
+          }
+        },
+        (boomPos) => {
+          // CATASTROPHIC SHIP DETONATION!
+          this.audio.playShipDetonate();
+          this.input.rumble(1.0, 1.0, 520);
+          this.screenShake = 2.2;
+          this.hud.triggerScreenFlash('death');
+          this.hud.showArcadeStamp('SHIP DESTROYED // EJECTING!', 'death');
+          this.particles.burst(boomPos, 70, 0xff4400, 34, 1.75, 1.15);
+          this.particles.burst(boomPos, 45, 0xffd447, 28, 1.35, 0.95);
+          this.particles.burst(boomPos, 28, 0x00f0ff, 26, 1.1, 0.8);
+          this.particles.spawnShockwave(boomPos, 0xffffff, 24, 0.48);
+          this.particles.spawnShockwave(boomPos, 0xffaa22, 34, 0.75);
+          this.particles.spawnShockwave(boomPos, 0xff2244, 42, 0.95);
+        }
+      );
+
+      // Dramatic tracking camera orbiting the burning/exploding starfighter!
+      const cam = this.renderer.camera;
+      const targetCamX = this.player.root.position.x * 0.65 + Math.sin(performance.now() * 0.0022) * 2.5;
+      const targetCamY = this.player.root.position.y * 0.55 + 2.2;
+      cam.position.x += (targetCamX - cam.position.x) * Math.min(1, dt * 5);
+      cam.position.y += (targetCamY - cam.position.y) * Math.min(1, dt * 5);
+      cam.position.z += (11.5 - cam.position.z) * Math.min(1, dt * 3);
+      if (this.screenShake > 0) {
+        this.screenShake = Math.max(0, this.screenShake - dt * 2.1);
+        const s = this.screenShake * 0.85;
+        cam.position.x += (Math.random() - 0.5) * s;
+        cam.position.y += (Math.random() - 0.5) * s;
+      }
+      cam.lookAt(this.player.root.position.x, this.player.root.position.y, this.player.root.position.z - 2);
+      cam.fov += (74 - cam.fov) * Math.min(1, dt * 4);
+      cam.updateProjectionMatrix();
+
+      this.hud.updatePlayingHud(
+        dt,
+        this.state,
+        0,
+        this.player.boostMeter,
+        this.timeline ? this.timeline.progress : 0,
+        { active: false, name: '', phase: 1, hpPct: 0 },
+        { nearX: -999, nearY: -999, farX: -999, farY: -999, charging: false, lockPoints: [] },
+        {
+          weaponMode: this.player.weaponMode,
+          weaponTimer: this.player.weaponTimer,
+          novaBombs: this.player.novaBombs,
+          gamepadConnected: input.gamepadConnected,
+        }
+      );
+
+      if (phase === 'done') {
+        this.playerDying = false;
+        this.hud.setCriticalHull(false, false);
+        this.state.phase = 'GameOver';
+        this.hud.setBossCheckpoint(this.bossCheckpointDist !== null);
+        this.playCutsceneThen('gameover-eject', () => {
+          this.hud.renderPhase('GameOver', this.state, this.levels);
+          this.playCategoryBanter('gameOver', 4.0, true);
+        });
+      }
+      return;
+    }
+
+    // === EPIC BOSS CHAIN-REACTION MELTDOWN & VICTORY FLYBY SEQUENCE (3.1s!) ===
+    if (this.bossClearDelay > 0) {
+      this.bossClearDelay -= dt;
+      this.bossVictoryElapsed += dt;
+      const flybySpeed = level.baseSpeed * 1.32;
+      this.trackCurve.update(dt, this.timeline ? this.timeline.distance : 0, this.state.currentLevelIndex, false);
+      this.env.update(dt, flybySpeed, true, this.trackCurve);
+      this.player.updateVictoryFlyby(dt, flybySpeed, this.bossVictoryElapsed);
+      this.projectiles.update(dt);
+      this.particles.update(dt, flybySpeed);
+
+      if (Math.random() < 0.85) {
+        const pPos = this.player.root.position.clone().add(new THREE.Vector3(0, 0, 2.0));
+        this.particles.spawnTrail(pPos, 0xffd447, 0.45, 0.28);
+      }
+
+      this.boss.updateDeathMeltdown(
+        dt,
+        (boomPos, intensity) => {
+          this.audio.playBossChainBoom(intensity);
+          this.input.rumble(0.45 + intensity * 0.4, 0.4 + intensity * 0.4, 110);
+          this.screenShake = Math.max(this.screenShake, 0.65 + intensity * 0.65);
+          this.particles.burst(boomPos, 24, 0xff5500, 24, 1.4, 0.72);
+          this.particles.burst(boomPos, 14, 0xffd447, 18, 1.1, 0.55);
+          this.particles.spawnShockwave(boomPos, 0xffaa22, 12 + intensity * 12, 0.42);
+        },
+        (finalPos) => {
+          // FINAL SUPERNOVA BOSS DETONATION!
+          this.audio.playShipDetonate();
+          this.input.rumble(1.0, 1.0, 520);
+          this.screenShake = 2.1;
+          this.hud.triggerScreenFlash('white');
+          this.hud.showBanner('TARGET OBLITERATED // SECTOR CLEAR!', 2.6);
+          this.hud.showArcadeStamp('TARGET OBLITERATED!!', 'clear');
+          this.particles.burst(finalPos, 90, 0xffd447, 42, 2.2, 1.35);
+          this.particles.burst(finalPos, 65, 0x00f0ff, 36, 1.8, 1.15);
+          this.particles.burst(finalPos, 45, 0xff3355, 34, 1.7, 1.05);
+          this.particles.spawnShockwave(finalPos, 0xffffff, 38, 0.55);
+          this.particles.spawnShockwave(finalPos, 0x00f0ff, 52, 0.92);
+          this.playCategoryBanter('levelClear', 4.2, true);
+        }
+      );
+
+      // Heroic sweeping victory follow camera!
+      const cam = this.renderer.camera;
+      const sweepAngle = Math.min(1, this.bossVictoryElapsed / 2.8);
+      const camTargetX = this.player.root.position.x * 0.4 + Math.sin(sweepAngle * Math.PI) * 3.8;
+      const camTargetY = this.player.root.position.y * 0.35 + 1.4;
+      cam.position.x += (camTargetX - cam.position.x) * Math.min(1, dt * 4.5);
+      cam.position.y += (camTargetY - cam.position.y) * Math.min(1, dt * 4.5);
+      cam.position.z = THREE.MathUtils.lerp(cam.position.z, 12.2, dt * 2.5);
+      if (this.screenShake > 0) {
+        this.screenShake = Math.max(0, this.screenShake - dt * 2.4);
+        const s = this.screenShake * 0.78;
+        cam.position.x += (Math.random() - 0.5) * s;
+        cam.position.y += (Math.random() - 0.5) * s;
+      }
+      cam.fov += (75 - cam.fov) * Math.min(1, dt * 4);
+      cam.updateProjectionMatrix();
+      cam.lookAt(this.player.root.position.x * 0.25, this.player.root.position.y * 0.25, -45);
+
+      this.hud.updatePlayingHud(
+        dt,
+        this.state,
+        (this.player.shield / this.player.maxShield) * 100,
+        this.player.boostMeter,
+        1,
+        { active: false, name: '', phase: 2, hpPct: 0 },
+        { nearX: -999, nearY: -999, farX: -999, farY: -999, charging: false, lockPoints: [] },
+        {
+          weaponMode: this.player.weaponMode,
+          weaponTimer: this.player.weaponTimer,
+          novaBombs: this.player.novaBombs,
+          gamepadConnected: input.gamepadConnected,
+        }
+      );
+
+      if (this.bossClearDelay <= 0 && this.state.phase === 'Playing') {
+        this.state.stats.shieldRemaining = this.player.shield;
+        const { totalLevelScore, bootBucksEarned } = this.state.computeRank();
+        this.state.stats.bootBucksEarned = bootBucksEarned;
+        this.meta.addBootBucks(bootBucksEarned);
+        this.state.totalCampaignScore += totalLevelScore;
+
+        const isFinalSector = this.state.currentLevelIndex >= this.levels.length - 1;
+        if (isFinalSector) {
+          this.state.phase = 'Victory';
+          this.playCutsceneThen(
+            'victory-ending',
+            () => {
+              this.audio.playMusicTrack('victory-fanfare', true, 0.52);
+              this.hud.renderPhase('Victory', this.state, this.levels);
+            },
+            '/assets/videos/victory_cutscene.mp4'
+          );
+        } else {
+          this.state.phase = 'LevelClear';
+          this.audio.playMusicTrack('victory-fanfare', true, 0.52);
+          this.hud.renderPhase('LevelClear', this.state, this.levels);
+        }
+      }
+      return;
+    }
+
+    // Hyper-Warp Sector Entry Zoom-In (first 1.15s of sector!)
+    if (this.warpEntryTimer > 0) {
+      this.warpEntryTimer = Math.max(0, this.warpEntryTimer - dt);
+      const t = this.warpEntryTimer / 1.15;
+      this.player.setEntryZOffset(t * t * 11);
+      if (Math.random() < 0.8) {
+        const pPos = this.player.root.position.clone().add(new THREE.Vector3(0, 0, 2.2));
+        this.particles.spawnTrail(pPos, 0x00f0ff, 0.55, 0.25);
+      }
+    } else {
+      this.player.setEntryZOffset(0);
+    }
+
+    const isSuperBoost = this.player.isBoosting || this.turboBoostTimer > 0 || this.warpEntryTimer > 0.25;
     const speedMult = this.turboBoostTimer > 0 ? 1.52 : this.player.isBoosting ? 1.45 : this.player.isBraking ? 0.65 : 1.08;
     const railSpeed = level.baseSpeed * speedMult;
 
@@ -887,12 +1232,13 @@ class StarburstGame {
       input.chargeReleased || fireChargeReleased
     );
 
-    // 4. Advance Level Timeline + Escalating Obstacle Intensity (L1/L2 more intense, L3 highest!)
+    // 4. Advance Level Timeline + Escalating Obstacle Intensity (or Mid-Boss Tactical Supply Drops!)
+    const diffCfg = this.state.difficultyConfig;
     if (this.timeline && !this.boss.active && this.bossClearDelay <= 0) {
       this.timeline.advance(dt, railSpeed, (ev) => this.handleTimelineEvent(ev, level));
 
       const lvlIdx = this.state.currentLevelIndex;
-      const interval = lvlIdx === 0 ? 3.2 : lvlIdx === 1 ? 2.55 : 2.0;
+      const interval = lvlIdx === 0 ? 2.75 : lvlIdx === 1 ? 2.2 : 1.75;
       const maxObstacles = lvlIdx === 0 ? 4 : lvlIdx === 1 ? 5 : 6;
       this.ambientHazardTimer -= dt;
       if (this.ambientHazardTimer <= 0) {
@@ -901,16 +1247,50 @@ class StarburstGame {
           this.spawnAmbientCorridorObject(level);
         }
       }
+    } else if (this.boss.active && this.bossClearDelay <= 0) {
+      // Zorp Tactical Supply Drops during Boss Battles — grab Shield Rings & Weapon Crates mid-fight!
+      this.bossSupplyTimer -= dt;
+      if (this.bossSupplyTimer <= 0) {
+        const supplyCd =
+          this.state.difficulty === 'rookie' ? 8.8 : this.state.difficulty === 'ace' ? 10.2 : 11.8;
+        this.bossSupplyTimer = supplyCd;
+        this.spawnBossSupplyDrop(level);
+      }
     }
 
-    // Dynamic ship accent lighting + Turbo screen-edge energy glow
+    // Dynamic ship accent lighting + Turbo screen-edge energy glow + Critical Hull tension!
     this.player.setAccentState(this.state.isOverdrive, this.turboBoostTimer > 0);
     this.hud.setTurboGlow(this.turboBoostTimer > 0);
+    const shieldPctNow = (this.player.shield / Math.max(1, this.player.maxShield)) * 100;
+    const isCritical = shieldPctNow > 0 && shieldPctNow <= 25;
+    this.hud.setCriticalHull(isCritical, false);
+    if (isCritical) {
+      this.criticalSparkTimer -= dt;
+      if (this.criticalSparkTimer <= 0) {
+        this.criticalSparkTimer = 0.14;
+        const dmgPos = this.player.root.position.clone().add(new THREE.Vector3(-1.1, 0.15, 0.9));
+        this.particles.burst(dmgPos, 4, 0xff4411, 10, 0.55, 0.28);
+      }
+      this.criticalBeepTimer -= dt;
+      if (this.criticalBeepTimer <= 0) {
+        this.criticalBeepTimer = 1.75;
+        this.audio.playLowShieldBeep();
+      }
+    } else {
+      this.criticalBeepTimer = 0;
+    }
 
     // 5. Update World, Enemies, Obstacles, Boss, Projectiles, Particles (scaled by Difficulty!)
-    const diffCfg = this.state.difficultyConfig;
     this.env.update(dt, railSpeed, isSuperBoost, this.trackCurve);
-    this.enemies.update(dt, railSpeed, this.player.position, this.projectiles, diffCfg.enemyFireRateMult);
+    this.enemies.update(
+      dt,
+      railSpeed,
+      this.player.position,
+      this.projectiles,
+      diffCfg.enemyFireRateMult,
+      diffCfg.projectileSpeedMult,
+      diffCfg.damageTakenMult
+    );
     this.obstacles.update(dt, railSpeed, this.trackCurve);
     this.boss.update(
       dt,
@@ -920,6 +1300,9 @@ class StarburstGame {
       this.enemies,
       diffCfg.bossAggressionMult,
       diffCfg.bulletDensityMult,
+      diffCfg.projectileSpeedMult,
+      diffCfg.damageTakenMult,
+      diffCfg.enemyHpMult,
       () => {
         this.audio.playBossAlarm();
         this.hud.showBanner("I'MMA PUT BOOT N ASS // LASER SWEEP!", 1.8);
@@ -953,6 +1336,7 @@ class StarburstGame {
         onEnemyKilled: (e, pos) => {
           this.state.registerHit();
           const { points, enteredOverdrive } = this.state.registerKill(e.scoreValue);
+          this.registerMultiKill();
           this.audio.playExplosion(false);
           this.hud.triggerHitMarker();
           this.input.rumble(0.22, 0.35, 75);
@@ -967,6 +1351,11 @@ class StarburstGame {
             this.playCategoryBanter('overdrive', 3.8, false, 0.85);
           } else if (this.state.stats.combo === 6 || this.state.stats.combo === 12) {
             this.playCategoryBanter('streak', 3.4, false, 0.55);
+          }
+
+          // Shooting down boss escorts has a 40% chance to drop a Golden Shield Ring!
+          if (this.boss.active && pos.z < -18 && Math.random() < 0.4) {
+            this.spawnBossPickupAt(level, 'boost_ring', pos.x, pos.y, pos.z, 30);
           }
         },
         onCrystalDestroyed: (_obs, pos) => {
@@ -1000,6 +1389,7 @@ class StarburstGame {
           this.particles.burst(pos, 8, 0xffd447, 16, 0.8, 0.32);
 
           if (shatteredShield) {
+            this.bossPartsDestroyedCount += 1;
             this.state.addBonusScore(1200);
             this.audio.playExplosion(true);
             this.input.rumble(0.85, 0.7, 220);
@@ -1008,28 +1398,47 @@ class StarburstGame {
             const sp = this.projectToScreen(pos);
             this.hud.spawnFloatingText(sp.x, sp.y, 'PRISM SHATTERED!! +1200', '#00ffd5');
             this.screenShake = Math.max(this.screenShake, 0.85);
+            // Shattering a Prism Shield ejects a Weapon Crate or Shield Ring!
+            const dropKind =
+              this.player.shield < this.player.maxShield * 0.65 || this.bossPartsDestroyedCount % 2 === 0
+                ? 'boost_ring'
+                : 'weapon_crate';
+            this.spawnBossPickupAt(level, dropKind, pos.x, pos.y, pos.z, 28);
           } else if (partDestroyed) {
+            this.bossPartsDestroyedCount += 1;
             this.state.addBonusScore(800);
             this.audio.playExplosion(true);
             this.input.rumble(0.7, 0.5, 200);
             this.particles.burst(pos, 36, 0xff4422, 30, 1.5, 0.85);
             this.particles.spawnShockwave(pos, 0xff4422, 13, 0.48);
             this.screenShake = Math.max(this.screenShake, 0.7);
+            // Destroying turrets / serpent segments rewards you with tactical mid-fight pickups!
+            const shouldDrop =
+              this.boss.bossId !== 'solaris_leviathan' || this.bossPartsDestroyedCount % 2 === 1;
+            if (shouldDrop && !bossDefeated) {
+              const dropKind =
+                this.player.shield < this.player.maxShield * 0.65 || this.bossPartsDestroyedCount % 2 === 0
+                  ? 'boost_ring'
+                  : 'weapon_crate';
+              this.spawnBossPickupAt(level, dropKind, pos.x, pos.y, pos.z, 28);
+            }
           }
 
           if (phaseBreak && !bossDefeated) {
-            this.hitstopTimer = 0.085;
+            this.hitstopTimer = 0.11;
             this.audio.playExplosion(true);
             this.input.rumble(0.95, 0.8, 320);
+            this.hud.triggerScreenFlash('gold');
+            this.hud.showArcadeStamp('PHASE 2 // CORE EXPOSED!', 'clear');
             this.particles.spawnShockwave(this.boss.root.position.clone(), 0xffd447, 26, 0.7);
             this.screenShake = 1.1;
             this.hud.showBanner("PHASE 2 // I'MMA PUT BOOT N ASS!", 2.8);
             this.playCategoryBanter('bossBootNAss', 3.8, true);
             window.setTimeout(() => {
               if (this.boss.active && this.state.phase === 'Playing') {
-                this.playCategoryBanter('bossPhase2', 4.0, false, 1.0);
+                this.playCategoryBanter(Math.random() < 0.55 ? 'gruntPanic' : 'bossPhase2', 4.0, false, 1.0);
               }
-            }, 4100);
+            }, 3900);
           }
 
           if (bossDefeated) {
@@ -1054,15 +1463,15 @@ class StarburstGame {
           }
 
           if (this.player.shield <= 0) {
-            this.state.phase = 'GameOver';
-            this.audio.stopMusicTrack();
-            this.audio.playExplosion(true);
-            this.hud.setBossCheckpoint(this.bossCheckpointDist !== null);
-            this.playCutsceneThen('gameover-eject', () => {
-              this.hud.renderPhase('GameOver', this.state, this.levels);
-              this.playCategoryBanter('gameOver', 4.0, true);
-            });
+            this.startPlayerDeathScene();
           }
+        },
+        onGraze: (pos) => {
+          const pts = this.state.addBonusScore(75);
+          this.audio.playGraze();
+          this.particles.burst(pos, 7, 0x00f0ff, 14, 0.55, 0.24);
+          const sp = this.projectToScreen(pos);
+          this.hud.spawnFloatingText(sp.x, sp.y - 14, `GRAZE! +${pts}`, '#00ffd5');
         },
         onDeflectShot: (proj) => {
           this.state.stats.deflections += 1;
@@ -1072,7 +1481,7 @@ class StarburstGame {
           this.particles.burst(proj.pos, 14, 0x00f0ff, 18, 0.8, 0.35);
           this.particles.spawnShockwave(proj.pos, 0x00f0ff, 5.5, 0.25);
 
-          const reflectDir = this.getAimAssistedDirection();
+          const reflectDir = this.getReflectAimDirection(proj.pos);
           this.projectiles.spawnPlayerBolt(
             proj.pos,
             reflectDir,
@@ -1082,7 +1491,11 @@ class StarburstGame {
           );
           const sp = this.projectToScreen(proj.pos);
           this.hud.spawnFloatingText(sp.x, sp.y, 'DEFLECT!', '#00f0ff');
-          this.playCategoryBanter('barrelRoll', 3.4, false, 0.35);
+          if (this.state.stats.deflections === 3 || this.state.stats.deflections === 7) {
+            this.playCategoryBanter('gruntPanic', 3.6, false, 0.9);
+          } else {
+            this.playCategoryBanter('barrelRoll', 3.4, false, 0.35);
+          }
         },
         onBoostRing: (obs) => {
           this.state.stats.ringsCollected += 1;
@@ -1100,7 +1513,7 @@ class StarburstGame {
         onSlalomGate: (obs) => {
           this.state.stats.turboGatesHit += 1;
           this.turboBoostTimer = 1.5;
-          this.player.heal(8);
+          this.player.heal(Math.max(3, Math.round(this.state.difficultyConfig.ringHealAmount * 0.5)));
           const pts = this.state.addBonusScore(500);
           this.audio.playBoost();
           this.audio.playRingPickup();
@@ -1136,40 +1549,11 @@ class StarburstGame {
       {
         deflectRadiusBonus: this.meta.deflectRadiusBonus,
         pickupRadiusMult: this.meta.pickupRadiusMult,
+        damageTakenMult: diffCfg.damageTakenMult,
       }
     );
 
-    // 7. Boss Defeat -> Level Clear (or Victory Cutscene -> FRONTIER LIBERATED on final Sector 3!)
-    if (this.bossClearDelay > 0) {
-      this.bossClearDelay -= dt;
-      if (this.bossClearDelay <= 0 && this.state.phase === 'Playing') {
-        this.state.stats.shieldRemaining = this.player.shield;
-        const { totalLevelScore, bootBucksEarned } = this.state.computeRank();
-        this.state.stats.bootBucksEarned = bootBucksEarned;
-        this.meta.addBootBucks(bootBucksEarned);
-        this.state.totalCampaignScore += totalLevelScore;
-
-        const isFinalSector = this.state.currentLevelIndex >= this.levels.length - 1;
-        if (isFinalSector) {
-          this.state.phase = 'Victory';
-          this.playCutsceneThen(
-            'victory-ending',
-            () => {
-              this.audio.playMusicTrack('victory-fanfare', true, 0.52);
-              this.hud.renderPhase('Victory', this.state, this.levels);
-            },
-            '/assets/videos/victory_cutscene.mp4'
-          );
-        } else {
-          this.state.phase = 'LevelClear';
-          this.audio.playMusicTrack('victory-fanfare', true, 0.52);
-          this.hud.renderPhase('LevelClear', this.state, this.levels);
-        }
-        return;
-      }
-    }
-
-    // 8. Camera Spring Tracking + Space-Coaster Banking + FOV Punch + Screen Shake
+    // 8. Camera Spring Tracking + Space-Coaster Banking + Hyper-Warp FOV Punch + Screen Shake
     const camTargetX = this.player.position.x * 0.42;
     const camTargetY = this.player.position.y * 0.38 + 2.1;
     const cam = this.renderer.camera;
@@ -1184,7 +1568,8 @@ class StarburstGame {
       cam.position.y += (Math.random() - 0.5) * s;
     }
 
-    const targetFov = isSuperBoost ? 78 : this.player.isBraking ? 55 : 65;
+    const targetFov =
+      this.warpEntryTimer > 0.25 ? 88 : isSuperBoost ? 78 : this.player.isBraking ? 55 : 65;
     cam.fov += (targetFov - cam.fov) * Math.min(1, dt * 6);
     cam.updateProjectionMatrix();
 
@@ -1234,13 +1619,61 @@ class StarburstGame {
     );
   }
 
+  private spawnBossPickupAt(
+    level: LevelConfig,
+    kind: 'boost_ring' | 'weapon_crate',
+    x: number,
+    y: number,
+    z: number,
+    speed: number
+  ): void {
+    const cx = THREE.MathUtils.clamp(x, -8.5, 8.5);
+    const cy = THREE.MathUtils.clamp(y, -4.5, 4.5);
+    this.obstacles.spawn(
+      {
+        atDistance: 0,
+        type: 'obstacle',
+        kind,
+        position: { x: cx, y: cy },
+        scale: kind === 'boost_ring' ? 1.2 : 1.05,
+        rotationSpeed: kind === 'weapon_crate' ? 1.4 : 0,
+      },
+      level.environment.primaryColor,
+      level.environment.secondaryColor,
+      { startZ: Math.min(-35, z), speedOverride: speed }
+    );
+  }
+
+  private spawnBossSupplyDrop(level: LevelConfig): void {
+    this.bossSupplyCycle += 1;
+    const lowShield = this.player.shield < this.player.maxShield * 0.62;
+    const dropKind: 'boost_ring' | 'weapon_crate' =
+      lowShield || this.bossSupplyCycle % 2 === 0 ? 'boost_ring' : 'weapon_crate';
+
+    const sx = (Math.random() - 0.5) * 11;
+    const sy = (Math.random() - 0.5) * 5.2;
+    this.spawnBossPickupAt(level, dropKind, sx, sy, -120, 38);
+
+    // If shield is critically low (< 35%), Zorp drops a bonus twin shield ring!
+    if (this.player.shield < this.player.maxShield * 0.35 && dropKind === 'boost_ring') {
+      this.spawnBossPickupAt(level, 'boost_ring', -sx * 0.6, -sy * 0.5, -138, 38);
+    }
+
+    if (dropKind === 'weapon_crate') {
+      this.hud.showBanner('ZORP SUPPLY DROP // GRAB WEAPON UPGRADE!', 2.0);
+    } else {
+      this.hud.showBanner('ZORP SUPPLY DROP // GRAB SHIELD RING!', 2.0);
+    }
+    this.playCategoryBanter('zorpSupply', 3.4, false, 0.75);
+  }
+
   private spawnAmbientCorridorObject(level: LevelConfig): void {
     this.ambientCycle++;
-    const roll = this.ambientCycle % 6;
+    const roll = this.ambientCycle % 7;
     const pCol = level.environment.primaryColor;
     const sCol = level.environment.secondaryColor;
 
-    if (roll === 0) {
+    if (roll === 0 || roll === 5) {
       const fromLeft = Math.random() < 0.5;
       this.obstacles.spawn(
         {
@@ -1305,7 +1738,7 @@ class StarburstGame {
           kind: 'spinner_cross',
           position: { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 2.5 },
           scale: 0.95 + Math.random() * 0.25,
-          rotationSpeed: (Math.random() < 0.5 ? 1 : -1) * (1.0 + this.state.currentLevelIndex * 0.25),
+          rotationSpeed: (Math.random() < 0.5 ? 1 : -1) * (1.1 + this.state.currentLevelIndex * 0.25),
         },
         pCol,
         sCol
@@ -1335,7 +1768,7 @@ class StarburstGame {
         this.playCategoryBanter('bossWarning', 4.2, true);
       }
     } else if (ev.type === 'wave') {
-      this.enemies.spawnWave(ev);
+      this.enemies.spawnWave(ev, this.state.difficultyConfig.enemyHpMult);
     } else if (ev.type === 'obstacle') {
       this.obstacles.spawn(ev, level.environment.primaryColor, level.environment.secondaryColor);
     } else if (ev.type === 'boss') {
@@ -1344,7 +1777,10 @@ class StarburstGame {
       this.hud.setBossCheckpoint(true);
       const bossVideo = BOSS_CUTSCENE_MAP[ev.bossId];
       const launchBossFight = () => {
-        this.boss.spawn(ev);
+        this.bossSupplyTimer = 7.5;
+        this.bossSupplyCycle = 0;
+        this.bossPartsDestroyedCount = 0;
+        this.boss.spawn(ev, this.state.difficultyConfig.bossHpMult);
         this.audio.playMusicTrack('boss-battle', true, 0.44, 0.78);
         this.audio.playBossAlarm();
         this.hud.showBanner(`WARNING // ${ev.name} — I'MMA PUT BOOT N ASS!`, 3.2);
@@ -1356,6 +1792,43 @@ class StarburstGame {
         launchBossFight();
       }
     }
+  }
+
+  private getReflectAimDirection(origin: THREE.Vector3): THREE.Vector3 {
+    const baseDir = this.player.aimDir.clone().normalize();
+    let bestDir = baseDir;
+    let bestScore = -1;
+
+    // During a boss fight, barrel-roll deflections snap reliably back into boss weak points / prism shields!
+    if (this.boss.active) {
+      const pPos = new THREE.Vector3();
+      const toTarget = new THREE.Vector3();
+      for (const part of this.boss.getReflectTargetParts()) {
+        part.getPosition(pPos);
+        toTarget.subVectors(pPos, origin).normalize();
+        const score = baseDir.dot(toTarget);
+        if (score > bestScore) {
+          bestScore = score;
+          bestDir = toTarget.clone();
+        }
+      }
+      if (bestScore > 0.45) return bestDir;
+    }
+
+    // Otherwise lock onto the nearest enemy in a generous forward cone!
+    let bestDot = 0.78;
+    const toTarget = new THREE.Vector3();
+    for (const e of this.enemies.enemies) {
+      if (e.alive && e.mesh.position.z < -6 && e.mesh.position.z > -155) {
+        toTarget.subVectors(e.mesh.position, origin).normalize();
+        const dot = baseDir.dot(toTarget);
+        if (dot > bestDot) {
+          bestDot = dot;
+          bestDir = toTarget.clone();
+        }
+      }
+    }
+    return bestDir;
   }
 
   private getAimAssistedDirection(): THREE.Vector3 {
@@ -1457,4 +1930,4 @@ class StarburstGame {
   }
 }
 
-new StarburstGame();
+new BootNAssGame();

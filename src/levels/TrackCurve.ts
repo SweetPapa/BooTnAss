@@ -6,7 +6,7 @@ export interface CurveOffset {
 }
 
 /**
- * Drives dramatic Space-Run / Super Mario Galaxy / Arcade Racer twists, turns,
+ * Drives dramatic dynamic space-coaster & arcade-racer twists, turns,
  * vertical crests/dives, and smooth horizon banking!
  * At z = 0 (the player plane), offset is always (0, 0) so aiming & hitboxes stay razor-sharp.
  * Ahead of the player (z < 0), the entire track, scenery, and approaching obstacles bend smoothly!

@@ -17,6 +17,7 @@ export interface ObstacleEntity {
   hp: number;
   hitRadius: number;
   halfExtents?: THREE.Vector3;
+  speedOverride?: number;
 }
 
 let nextObstacleId = 1;
@@ -29,7 +30,12 @@ export class ObstacleFactory {
     this.scene = scene;
   }
 
-  public spawn(ev: ObstacleEvent, primaryHex: string, secondaryHex: string): ObstacleEntity {
+  public spawn(
+    ev: ObstacleEvent,
+    primaryHex: string,
+    secondaryHex: string,
+    opts?: { startZ?: number; speedOverride?: number }
+  ): ObstacleEntity {
     const group = new THREE.Group();
     const scale = ev.scale ?? 1.0;
     let destructible = false;
@@ -308,7 +314,7 @@ export class ObstacleFactory {
       halfExtents = new THREE.Vector3(length * 0.5, 1.0, 1.3);
     }
 
-    const logicalPos = new THREE.Vector3(ev.position.x, ev.position.y, -185);
+    const logicalPos = new THREE.Vector3(ev.position.x, ev.position.y, opts?.startZ ?? -185);
     group.position.copy(logicalPos);
     this.scene.add(group);
 
@@ -327,6 +333,7 @@ export class ObstacleFactory {
       hp,
       hitRadius,
       halfExtents,
+      speedOverride: opts?.speedOverride,
     };
     this.obstacles.push(entity);
     return entity;
@@ -352,7 +359,7 @@ export class ObstacleFactory {
         continue;
       }
 
-      o.logicalPos.z += railSpeed * dt;
+      o.logicalPos.z += (o.speedOverride ?? railSpeed) * dt;
       if (o.driftX !== 0) o.logicalPos.x += o.driftX * dt;
       if (o.driftY !== 0) o.logicalPos.y += o.driftY * dt;
 

@@ -38,7 +38,7 @@ export class EnemyFactory {
     this.scene = scene;
   }
 
-  public spawnWave(wave: WaveEvent): void {
+  public spawnWave(wave: WaveEvent, hpMult = 1.0): void {
     const count = wave.count;
     // Synchronized squadron phase so the entire formation moves as one crisp, organized unit!
     const squadronPhase = Math.random() * Math.PI * 2;
@@ -48,7 +48,7 @@ export class EnemyFactory {
       const startY = THREE.MathUtils.clamp(wave.spawnOffset.y + offset.y, -6.0, 6.0);
       const startZ = -170 - offset.z;
 
-      // Organized staggered firing so squadrons fire in clean readable volleys
+      // Organized staggered firing so squadrons open fire quickly in crisp volleys
       const entity = this.spawnSingle(
         wave.enemy,
         startX,
@@ -56,9 +56,10 @@ export class EnemyFactory {
         startZ,
         wave.behavior,
         wave.fireRate,
-        squadronPhase + (wave.formation === 'spiral' ? i * 0.45 : 0)
+        squadronPhase + (wave.formation === 'spiral' ? i * 0.45 : 0),
+        hpMult
       );
-      entity.fireTimer = wave.fireRate > 0 ? 0.9 + i * 0.25 : 999;
+      entity.fireTimer = wave.fireRate > 0 ? 0.75 + i * 0.22 : 999;
     }
   }
 
@@ -69,9 +70,11 @@ export class EnemyFactory {
     z: number,
     behavior: WaveEvent['behavior'],
     fireRate: number,
-    phaseOffset = 0
+    phaseOffset = 0,
+    hpMult = 1.0
   ): EnemyEntity {
-    const { group, hp, radius, scoreValue, speedZ } = this.buildMesh(kind);
+    const { group, hp: baseHp, radius, scoreValue, speedZ } = this.buildMesh(kind);
+    const hp = Math.round(baseHp * hpMult);
     group.position.set(x, y, z);
     this.scene.add(group);
 
@@ -122,7 +125,7 @@ export class EnemyFactory {
         // Crisp horizontal firing wall
         return { x: d * 3.6, y: 0, z: 0 };
       case 'v_shape':
-        // Iconic Star Fox V-echelon formation
+        // Classic V-echelon attack formation
         return { x: d * 3.2, y: -Math.abs(d) * 0.45, z: Math.abs(d) * 6.5 };
       case 'spiral': {
         const angle = (i / Math.max(1, count)) * Math.PI * 2;
@@ -188,7 +191,7 @@ export class EnemyFactory {
       eye.position.set(0, 0.22, 0.85);
       group.add(eye);
 
-      return { group, hp: 22, radius: 1.7, scoreValue: 150, speedZ: 28 };
+      return { group, hp: 28, radius: 1.7, scoreValue: 150, speedZ: 29 };
     }
 
     if (kind === 'weaver') {
@@ -207,7 +210,7 @@ export class EnemyFactory {
       finR.position.set(1.95, 0, 0);
       group.add(finR);
 
-      return { group, hp: 36, radius: 2.0, scoreValue: 250, speedZ: 24 };
+      return { group, hp: 44, radius: 2.0, scoreValue: 250, speedZ: 25 };
     }
 
     if (kind === 'turret') {
@@ -223,7 +226,7 @@ export class EnemyFactory {
       barrel.position.set(0, 0, 1.0);
       group.add(barrel);
 
-      return { group, hp: 58, radius: 2.25, scoreValue: 350, speedZ: 16 };
+      return { group, hp: 75, radius: 2.25, scoreValue: 350, speedZ: 16 };
     }
 
     // interceptor — striking forward-swept crimson & white ace
@@ -246,7 +249,7 @@ export class EnemyFactory {
     core.position.set(0, 0.3, 0.5);
     group.add(core);
 
-    return { group, hp: 46, radius: 2.1, scoreValue: 400, speedZ: 34 };
+    return { group, hp: 58, radius: 2.1, scoreValue: 400, speedZ: 35 };
   }
 
   public damageEnemy(enemy: EnemyEntity, amount: number): boolean {
@@ -272,7 +275,9 @@ export class EnemyFactory {
     railSpeed: number,
     playerPos: THREE.Vector3,
     projectiles: ProjectilePool,
-    fireRateMult = 1.0
+    fireRateMult = 1.0,
+    projSpeedMult = 1.0,
+    damageMult = 1.0
   ): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -294,44 +299,64 @@ export class EnemyFactory {
 
       const pos = e.mesh.position;
       if (e.behavior === 'straight') {
-        pos.z += (e.speedZ + railSpeed * 0.25) * dt;
+        pos.z += (e.speedZ + railSpeed * 0.28) * dt;
       } else if (e.behavior === 'sine_weave') {
         // Synchronized smooth squadron sine wave
-        pos.z += (e.speedZ + railSpeed * 0.25) * dt;
-        pos.x = e.baseX + Math.sin(e.age * 2.0 + e.phaseOffset) * 3.4;
-        pos.y = e.baseY + Math.cos(e.age * 1.4 + e.phaseOffset) * 1.3;
-        e.mesh.rotation.z = Math.cos(e.age * 2.0 + e.phaseOffset) * 0.32;
+        pos.z += (e.speedZ + railSpeed * 0.28) * dt;
+        pos.x = e.baseX + Math.sin(e.age * 2.4 + e.phaseOffset) * 3.8;
+        pos.y = e.baseY + Math.cos(e.age * 1.7 + e.phaseOffset) * 1.6;
+        e.mesh.rotation.z = Math.cos(e.age * 2.4 + e.phaseOffset) * 0.36;
       } else if (e.behavior === 'swoop_pass') {
-        // Clean formation glide, then gentle coordinated bank toward center
-        pos.z += (e.speedZ + railSpeed * 0.3) * dt;
-        if (pos.z > -85 && pos.z < -25) {
-          pos.x += (playerPos.x * 0.45 - pos.x) * dt * 0.45;
-          pos.y += (playerPos.y * 0.45 - pos.y) * dt * 0.45;
+        // Aggressive coordinated bank toward player flight lane
+        pos.z += (e.speedZ + railSpeed * 0.34) * dt;
+        if (pos.z > -95 && pos.z < -20) {
+          pos.x += (playerPos.x * 0.65 - pos.x) * dt * 0.68;
+          pos.y += (playerPos.y * 0.65 - pos.y) * dt * 0.68;
         }
-        e.mesh.rotation.z = Math.sin(e.age * 2.4 + e.phaseOffset) * 0.25;
+        e.mesh.rotation.z = Math.sin(e.age * 2.8 + e.phaseOffset) * 0.3;
       } else if (e.behavior === 'hover_fire') {
-        // Holds clean formation line at Z = -52 so you can pick them off systematically!
+        // Holds aggressive firing line at Z = -52
         if (pos.z < -52) {
-          pos.z += (e.speedZ + railSpeed * 0.45) * dt;
-        } else if (e.age > 6.5) {
-          pos.z += (e.speedZ + railSpeed * 0.55) * dt;
+          pos.z += (e.speedZ + railSpeed * 0.5) * dt;
+        } else if (e.age > 8.5) {
+          pos.z += (e.speedZ + railSpeed * 0.58) * dt;
         } else {
-          pos.x = e.baseX + Math.sin(e.age * 1.2 + e.phaseOffset) * 1.6;
-          pos.y = e.baseY + Math.sin(e.age * 0.9 + e.phaseOffset) * 0.8;
+          pos.x = e.baseX + Math.sin(e.age * 1.65 + e.phaseOffset) * 2.2;
+          pos.y = e.baseY + Math.sin(e.age * 1.2 + e.phaseOffset) * 1.1;
         }
       }
 
       if (e.kind === 'turret') {
-        e.mesh.rotation.z += dt * 1.4;
+        e.mesh.rotation.z += dt * 1.9;
       }
 
-      if (e.fireRate > 0 && pos.z > -135 && pos.z < -18) {
+      if (e.fireRate > 0 && pos.z > -140 && pos.z < -20) {
         e.fireTimer -= dt * fireRateMult;
         if (e.fireTimer <= 0) {
           e.fireTimer = 1 / e.fireRate;
-          const dir = new THREE.Vector3().subVectors(playerPos, pos).normalize();
-          const shotSpeed = e.kind === 'interceptor' ? 72 : 58;
-          projectiles.spawnEnemyPlasma(pos, dir.multiplyScalar(shotSpeed), 12, 0.88);
+          const baseSpeed = e.kind === 'interceptor' ? 74 : 62;
+          const shotSpeed = baseSpeed * projSpeedMult;
+          const shotDmg = Math.round(12 * damageMult);
+
+          if (e.kind === 'turret') {
+            // Clean 3-way turret spread fan on ACE/MAX (twin spread on ROOKIE)
+            const fan = fireRateMult >= 1.15 ? [-1, 0, 1] : [-0.8, 0.8];
+            for (const k of fan) {
+              const target = playerPos.clone().add(new THREE.Vector3(k * 3.1, 0, 0));
+              const dir = target.sub(pos).normalize();
+              projectiles.spawnEnemyPlasma(pos, dir.multiplyScalar(shotSpeed), shotDmg, 0.88);
+            }
+          } else if (e.kind === 'interceptor') {
+            // Twin rapid interceptor bolts
+            for (const side of [-1, 1]) {
+              const target = playerPos.clone().add(new THREE.Vector3(side * 1.4, 0, 0));
+              const dir = target.sub(pos).normalize();
+              projectiles.spawnEnemyPlasma(pos, dir.multiplyScalar(shotSpeed), shotDmg, 0.84);
+            }
+          } else {
+            const dir = new THREE.Vector3().subVectors(playerPos, pos).normalize();
+            projectiles.spawnEnemyPlasma(pos, dir.multiplyScalar(shotSpeed), shotDmg, 0.86);
+          }
         }
       }
 

@@ -1,7 +1,7 @@
 id: "prism-belt"
 name: "02 // PRISM ASTEROID BELT"
 subtitle: "Shattered Crystal Nebula"
-baseSpeed: 56
+baseSpeed: 58
 length: 4800
 
 environment:
@@ -38,10 +38,10 @@ timeline:
     type: "wave"
     enemy: "weaver"
     formation: "v_shape"
-    count: 5
+    count: 6
     spawnOffset: { x: 0, y: 1.5 }
     behavior: "sine_weave"
-    fireRate: 0.95
+    fireRate: 1.05
 
   - atDistance: 700
     type: "obstacle"
@@ -54,10 +54,10 @@ timeline:
     type: "wave"
     enemy: "scout"
     formation: "flanking"
-    count: 6
+    count: 7
     spawnOffset: { x: 0, y: 0 }
     behavior: "swoop_pass"
-    fireRate: 1.0
+    fireRate: 1.1
 
   - atDistance: 1020
     type: "obstacle"
@@ -94,7 +94,7 @@ timeline:
     count: 4
     spawnOffset: { x: 0, y: 1.5 }
     behavior: "hover_fire"
-    fireRate: 1.1
+    fireRate: 1.15
 
   - atDistance: 1700
     type: "obstacle"
@@ -116,10 +116,10 @@ timeline:
     type: "wave"
     enemy: "interceptor"
     formation: "flanking"
-    count: 5
+    count: 6
     spawnOffset: { x: 0, y: 0 }
     behavior: "swoop_pass"
-    fireRate: 1.2
+    fireRate: 1.25
 
   - atDistance: 2160
     type: "obstacle"
@@ -139,10 +139,10 @@ timeline:
     type: "wave"
     enemy: "weaver"
     formation: "spiral"
-    count: 6
+    count: 7
     spawnOffset: { x: 0, y: 0 }
     behavior: "sine_weave"
-    fireRate: 1.1
+    fireRate: 1.2
 
   - atDistance: 2680
     type: "obstacle"
@@ -166,10 +166,10 @@ timeline:
     type: "wave"
     enemy: "interceptor"
     formation: "v_shape"
-    count: 6
+    count: 7
     spawnOffset: { x: 0, y: 1 }
     behavior: "swoop_pass"
-    fireRate: 1.25
+    fireRate: 1.35
 
   - atDistance: 3240
     type: "obstacle"
@@ -182,10 +182,10 @@ timeline:
     type: "wave"
     enemy: "turret"
     formation: "flanking"
-    count: 4
+    count: 5
     spawnOffset: { x: 0, y: 0 }
     behavior: "hover_fire"
-    fireRate: 1.2
+    fireRate: 1.25
 
   - atDistance: 3600
     type: "obstacle"
@@ -227,5 +227,5 @@ timeline:
     type: "boss"
     bossId: "octa_core_sentinel"
     name: "OCTA-CORE SENTINEL"
-    hp: 1250
+    hp: 3300
     phases: 2

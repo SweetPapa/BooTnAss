@@ -1,0 +1,6 @@
+{
+  "Endpoint": "https://eus.codesigning.azure.net/",
+  "CodeSigningAccountName": "spt-cert",
+  "CertificateProfileName": "forrester-personal",
+  "CorrelationId": "boot-n-ass"
+}

@@ -33,6 +33,7 @@ let nextPartId = 50000;
 
 export class BossController {
   public active = false;
+  public dying = false;
   public bossId: BossId = 'aegis_dreadnought';
   public displayName = '';
   public phase = 1;
@@ -76,6 +77,8 @@ export class BossController {
   private leviathanLowerJaw: THREE.Object3D | null = null;
   private destroyedSegmentsCount = 0;
   private sparkTimer = 0;
+  private deathTimer = 0;
+  private deathBoomTimer = 0;
 
   private readonly scene: THREE.Scene;
   private age = 0;
@@ -88,20 +91,24 @@ export class BossController {
     this.scene = scene;
   }
 
-  public spawn(ev: BossEvent): void {
+  public spawn(ev: BossEvent, hpMult = 1.0): void {
     this.clear();
+    const scaledHp = Math.round(ev.hp * hpMult);
     this.active = true;
+    this.dying = false;
+    this.deathTimer = 0;
+    this.deathBoomTimer = 0;
     this.bossId = ev.bossId;
     this.displayName = ev.name;
     this.phase = 1;
     this.maxPhases = ev.phases;
-    this.maxTotalHp = ev.hp;
-    this.totalHp = ev.hp;
+    this.maxTotalHp = scaledHp;
+    this.totalHp = scaledHp;
     this.fightElapsedSec = 0;
     this.age = 0;
-    this.attackTimer = 1.4;
+    this.attackTimer = 0.85;
     this.attackPatternIdx = 0;
-    this.droneTimer = 5.2;
+    this.droneTimer = 4.5;
     this.entered = false;
     this.sweepBeamActive = false;
     this.chargeTimer = 0;
@@ -125,11 +132,11 @@ export class BossController {
     this.root.add(this.coreLight);
 
     if (ev.bossId === 'aegis_dreadnought') {
-      this.buildAegisDreadnought(ev.hp);
+      this.buildAegisDreadnought(scaledHp);
     } else if (ev.bossId === 'octa_core_sentinel') {
-      this.buildOctaCoreSentinel(ev.hp);
+      this.buildOctaCoreSentinel(scaledHp);
     } else {
-      this.buildSolarisLeviathan(ev.hp);
+      this.buildSolarisLeviathan(scaledHp);
     }
 
     // Telegraphing charge-up orb
@@ -594,6 +601,15 @@ export class BossController {
     return this.parts.filter((p) => p.alive);
   }
 
+  public getReflectTargetParts(): BossPart[] {
+    if (!this.active) return [];
+    if (this.bossId === 'octa_core_sentinel') {
+      const shields = this.parts.filter((p) => p.isReflectShield && p.alive);
+      if (shields.length > 0) return shields;
+    }
+    return this.getTargetableParts();
+  }
+
   public damagePart(
     part: BossPart,
     dmg: number,
@@ -639,6 +655,7 @@ export class BossController {
       part.hp = 0;
       part.alive = false;
       part.mesh.visible = false;
+      this.attackTimer = Math.max(this.attackTimer, 1.35);
       this.totalHp = this.parts.reduce((acc, p) => acc + Math.max(0, p.hp), 0);
       const shieldsLeft = this.parts.filter((p) => p.isReflectShield && p.alive).length;
       const phaseBreak = this.phase === 1 && shieldsLeft <= 2;
@@ -687,6 +704,8 @@ export class BossController {
       part.alive = false;
       part.mesh.visible = false;
       partDestroyed = true;
+      // Stagger boss briefly when a weak point / segment is destroyed!
+      this.attackTimer = Math.max(this.attackTimer, 1.35);
       if (part.isSerpentSegment) {
         this.destroyedSegmentsCount += 1;
         this.shiftLeviathanColorPhase();
@@ -725,10 +744,17 @@ export class BossController {
     const bossDefeated = this.totalHp <= 0 || (core !== undefined && !core.alive);
     if (bossDefeated) {
       this.active = false;
+      this.dying = true;
+      this.deathTimer = 1.65;
+      this.deathBoomTimer = 0.04;
       this.sweepBeamActive = false;
+      this.chargeTimer = 0;
+      this.pendingAttack = null;
       if (this.sweepBeamGroup) this.sweepBeamGroup.visible = false;
       if (this.telegraphLine) this.telegraphLine.visible = false;
-      this.scene.remove(this.root);
+      if (this.chargeOrb) this.chargeOrb.visible = false;
+      // Re-show the core during the 1.65s dramatic chain-reaction meltdown!
+      if (core) core.mesh.visible = true;
     }
 
     return {
@@ -758,6 +784,9 @@ export class BossController {
     enemies: EnemyFactory,
     aggressionMult = 1.0,
     bulletDensityMult = 1.0,
+    projSpeedMult = 1.0,
+    damageMult = 1.0,
+    enemyHpMult = 1.0,
     onTelegraph?: () => void,
     onDamageSpark?: (pos: THREE.Vector3) => void
   ): void {
@@ -768,29 +797,29 @@ export class BossController {
 
     // Entrance to Z = -52
     if (!this.entered) {
-      this.root.position.z = THREE.MathUtils.lerp(this.root.position.z, -52, Math.min(1, dt * 2.5));
+      this.root.position.z = THREE.MathUtils.lerp(this.root.position.z, -52, Math.min(1, dt * 2.6));
       if (this.root.position.z > -54) this.entered = true;
     } else if (this.bossId === 'solaris_leviathan') {
-      const speedScale = (1 + this.destroyedSegmentsCount * 0.14) * aggressionMult;
-      const t = this.age * 0.95 * speedScale;
-      this.root.position.x = Math.sin(t) * 8.6;
+      const speedScale = (1 + this.destroyedSegmentsCount * 0.1) * Math.min(1.35, aggressionMult);
+      const t = this.age * 0.92 * speedScale;
+      this.root.position.x = Math.sin(t) * 8.4;
       this.root.position.y = Math.sin(t * 2) * 3.8;
       this.root.rotation.z = Math.cos(t) * 0.22;
 
       for (let s = 1; s < this.serpentSegments.length; s++) {
         const seg = this.serpentSegments[s];
         const lag = t - s * 0.36;
-        const targetX = Math.sin(lag) * 8.6 - this.root.position.x;
+        const targetX = Math.sin(lag) * 8.4 - this.root.position.x;
         const targetY = Math.sin(lag * 2) * 3.8 - this.root.position.y;
         seg.position.set(targetX, targetY, -s * 4.4);
         seg.rotation.z = Math.cos(lag) * 0.5;
       }
     } else {
-      const ampX = this.phase === 2 ? 7.0 : 4.4;
-      const ampY = this.phase === 2 ? 3.0 : 1.6;
-      const speedX = (this.phase === 2 ? 1.4 : 0.85) * aggressionMult;
+      const ampX = this.phase === 2 ? 6.8 : 4.4;
+      const ampY = this.phase === 2 ? 2.9 : 1.7;
+      const speedX = (this.phase === 2 ? 1.25 : 0.82) * Math.min(1.3, aggressionMult);
       this.root.position.x = Math.sin(this.age * speedX) * ampX;
-      this.root.position.y = 0.6 + Math.cos(this.age * 1.05) * ampY;
+      this.root.position.y = 0.6 + Math.cos(this.age * 1.0) * ampY;
       this.root.rotation.z = Math.cos(this.age * speedX) * (this.phase === 2 ? 0.14 : 0.06);
     }
 
@@ -861,24 +890,24 @@ export class BossController {
       }
 
       if (this.bossId === 'octa_core_sentinel' && p.isReflectShield && p.alive) {
-        const orbitSpeed = (this.phase === 2 ? 1.85 : 1.05) * aggressionMult;
+        const orbitSpeed = (this.phase === 2 ? 1.65 : 1.15) * Math.min(1.3, aggressionMult);
         const a = this.age * orbitSpeed + (i * Math.PI) / 2;
         p.mesh.position.set(Math.cos(a) * 6.6, Math.sin(a) * 4.6, 3.0);
         p.mesh.rotation.z = a;
       } else if (p.isCore && p.alive) {
-        p.mesh.rotation.y += dt * (this.phase === 2 ? 4.0 : 1.4);
+        p.mesh.rotation.y += dt * (this.phase === 2 ? 4.0 : 1.5);
         p.mesh.rotation.x += dt * 1.0;
       }
     }
 
-    // Telegraphing charge orb + warning laser sightline
+    // Telegraphing charge orb + warning laser sightline (crisp 0.80s readable warning!)
     if (this.chargeTimer > 0 && this.chargeOrb) {
       this.chargeTimer -= dt;
       this.chargeOrb.visible = true;
-      const pulse = 0.6 + (1 - this.chargeTimer / 0.65) * 2.0 + Math.sin(this.age * 35) * 0.2;
+      const pulse = 0.6 + (1 - this.chargeTimer / 0.8) * 2.1 + Math.sin(this.age * 32) * 0.2;
       this.chargeOrb.scale.setScalar(pulse);
       if (this.telegraphLine) {
-        this.telegraphLine.visible = Math.floor(this.age * 24) % 2 === 0;
+        this.telegraphLine.visible = Math.floor(this.age * 22) % 2 === 0;
       }
       if (this.chargeTimer <= 0) {
         this.chargeOrb.visible = false;
@@ -896,7 +925,7 @@ export class BossController {
       this.sweepBeamGroup.visible = true;
 
       if (this.sweepAxis === 'cross') {
-        // Octa-Core Sentinel Rotating X-Laser Cage!
+        // Octa-Core Sentinel / Enraged Leviathan Rotating X-Laser Cage!
         this.sweepBar1.visible = true;
         this.sweepBar2.visible = true;
         this.sweepCrossAngle = prog * Math.PI * 1.15 * this.sweepBeamDir;
@@ -927,21 +956,50 @@ export class BossController {
     if (!this.entered) return;
 
     this.attackTimer -= dt;
-    if (this.attackTimer <= 0 && this.chargeTimer <= 0) {
-      this.triggerBossAttack(playerPos, playerVel, projectiles, bulletDensityMult, onTelegraph);
-      const baseCd = this.phase === 2 ? 0.92 : 1.28;
+    // Pause plasma barrages while charging or executing a laser sweep so every hazard stays crisp & fair!
+    if (this.attackTimer <= 0 && this.chargeTimer <= 0 && !this.sweepBeamActive) {
+      this.triggerBossAttack(
+        playerPos,
+        playerVel,
+        projectiles,
+        bulletDensityMult,
+        projSpeedMult,
+        damageMult,
+        onTelegraph
+      );
+      const baseCd =
+        this.bossId === 'aegis_dreadnought'
+          ? this.phase === 2
+            ? 1.08
+            : 1.35
+          : this.bossId === 'octa_core_sentinel'
+            ? this.phase === 2
+              ? 1.05
+              : 1.3
+            : this.phase === 2
+              ? 0.96
+              : 1.22;
+      // Built-in brief tactical punish breather every 4th volley!
+      const breather = this.attackPatternIdx % 4 === 0 ? 0.55 : 0;
       const leviathanBonus =
-        this.bossId === 'solaris_leviathan' ? Math.max(0.62, 1 - this.destroyedSegmentsCount * 0.08) : 1;
-      this.attackTimer = (baseCd * leviathanBonus) / aggressionMult;
+        this.bossId === 'solaris_leviathan' ? Math.max(0.75, 1 - this.destroyedSegmentsCount * 0.05) : 1;
+      this.attackTimer = (baseCd * leviathanBonus) / aggressionMult + breather;
     }
 
-    if (this.phase === 2) {
-      this.droneTimer -= dt;
-      if (this.droneTimer <= 0) {
-        this.droneTimer = 5.4 / aggressionMult;
-        const escortKind = this.bossId === 'aegis_dreadnought' ? 'scout' : 'interceptor';
-        enemies.spawnSingle(escortKind, -9.5, 3.2, -105, 'swoop_pass', 1.0 * aggressionMult, 0);
-        enemies.spawnSingle(escortKind, 9.5, -2.5, -105, 'swoop_pass', 1.0 * aggressionMult, 1.5);
+    // Controlled escort waves (capped at max 2 alive so they add fun side pressure & drop shield rings!)
+    this.droneTimer -= dt;
+    if (this.droneTimer <= 0) {
+      this.droneTimer = (this.phase === 2 ? 7.8 : 9.8) / aggressionMult;
+      const aliveEscorts = enemies.enemies.filter((e) => e.alive).length;
+      if (aliveEscorts < 2) {
+        const escortKind =
+          this.bossId === 'aegis_dreadnought'
+            ? 'scout'
+            : this.bossId === 'octa_core_sentinel'
+              ? 'weaver'
+              : 'interceptor';
+        enemies.spawnSingle(escortKind, -9.8, 3.0, -110, 'swoop_pass', 0.9 * aggressionMult, 0, enemyHpMult);
+        enemies.spawnSingle(escortKind, 9.8, -2.4, -110, 'swoop_pass', 0.9 * aggressionMult, 1.5, enemyHpMult);
       }
     }
   }
@@ -952,7 +1010,7 @@ export class BossController {
     onTelegraph?: () => void
   ): void {
     const dir = Math.random() < 0.5 ? 1 : -1;
-    this.chargeTimer = 0.65;
+    this.chargeTimer = 0.8;
     if (this.telegraphLine) {
       if (axis === 'horizontal') {
         this.telegraphLine.position.set(0, dir > 0 ? -6.8 : 6.8, -22);
@@ -981,105 +1039,231 @@ export class BossController {
     playerVel: THREE.Vector3,
     projectiles: ProjectilePool,
     bulletDensityMult: number,
+    projSpeedMult: number,
+    damageMult: number,
     onTelegraph?: () => void
   ): void {
     this.attackPatternIdx++;
     const origin = new THREE.Vector3();
-    const leadPos = playerPos.clone().addScaledVector(playerVel, this.phase === 2 ? 0.3 : 0.14);
+    // Gentle aim lead so dodging sideways cleanly beats incoming fire!
+    const leadPos = playerPos.clone().addScaledVector(playerVel, this.phase === 2 ? 0.16 : 0.08);
+    const dmg = (base: number) => Math.round(base * damageMult);
 
-    // ===== SECTOR 1: AEGIS DREADNOUGHT SIGNATURE ATTACKS =====
+    // ===== SECTOR 1: AEGIS DREADNOUGHT — CHOREOGRAPHED 3-STEP ASSAULT =====
     if (this.bossId === 'aegis_dreadnought') {
-      if (this.phase === 2 && !this.sweepBeamActive && this.attackPatternIdx % 2 === 0) {
-        // Horizontal sweeping plasma wall to dodge vertically!
-        this.scheduleTelegraphedBeam('horizontal', 1.7, onTelegraph);
+      if (this.phase === 2 && !this.sweepBeamActive && this.attackPatternIdx % 3 === 0) {
+        // Alternates Horizontal and Vertical telegraphed laser sweeps!
+        const axis = this.attackPatternIdx % 6 === 0 ? 'vertical' : 'horizontal';
+        this.scheduleTelegraphedBeam(axis, 1.75, onTelegraph);
         return;
       }
       if (this.phase === 1) {
-        // Converging Dual Turret Crossfire Barrage
-        for (const p of this.parts) {
-          if (!p.alive || p.isCore) continue;
-          p.getPosition(origin);
-          const count = bulletDensityMult >= 1.5 ? 3 : 2;
-          for (let k = 0; k < count; k++) {
-            const spread = (k - (count - 1) / 2) * 2.4;
-            const dir = leadPos.clone().add(new THREE.Vector3(spread, 0, 0)).sub(origin).normalize();
-            projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(70), 14, 0.92);
+        const step = this.attackPatternIdx % 3;
+        if (step === 1) {
+          // Step 1: Converging Dual Turret Fan (2-3 clean readable shots per alive turret!)
+          for (const p of this.parts) {
+            if (!p.alive || p.isCore) continue;
+            p.getPosition(origin);
+            const count = bulletDensityMult >= 1.35 ? 3 : 2;
+            for (let k = 0; k < count; k++) {
+              const spread = (k - (count - 1) / 2) * 3.0;
+              const dir = leadPos.clone().add(new THREE.Vector3(spread, 0, 0)).sub(origin).normalize();
+              projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(56 * projSpeedMult), dmg(13), 0.95);
+            }
+          }
+        } else if (step === 2) {
+          // Step 2: Pincer Side Lanes (fires horizontal bracket leaving a crisp dodge lane!)
+          for (const p of this.parts) {
+            if (!p.alive || p.isCore) continue;
+            p.getPosition(origin);
+            const side = origin.x < 0 ? -1 : 1;
+            for (const oy of [-2.4, 2.4]) {
+              const target = new THREE.Vector3(side * 3.2, playerPos.y + oy, 0);
+              const dir = target.sub(origin).normalize();
+              projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(54 * projSpeedMult), dmg(13), 0.92);
+            }
+          }
+        } else {
+          // Step 3: Citadel Tri-Pulse (juicy aimed burst — awesome to barrel-roll deflect!)
+          this.root.getWorldPosition(origin);
+          origin.y += 3.0;
+          for (let k = -1; k <= 1; k++) {
+            const target = leadPos.clone().add(new THREE.Vector3(k * 2.8, 0, 0));
+            const dir = target.sub(origin).normalize();
+            projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(62 * projSpeedMult), dmg(14), 1.02);
           }
         }
       } else {
-        // Hangar Bay Plasma Bomb Wall (5-7 glowing slow-arcing bombs!)
+        // Phase 2: Alternates Graceful V-Arc Bomb Wall and Core Tri-Burst!
         const core = this.parts.find((p) => p.isCore);
         if (core) core.getPosition(origin);
         else this.root.getWorldPosition(origin);
-        const half = bulletDensityMult >= 1.5 ? 3 : 2;
-        for (let k = -half; k <= half; k++) {
-          const target = leadPos.clone().add(new THREE.Vector3(k * 3.0, Math.abs(k) * 0.7, 0));
-          const dir = target.sub(origin).normalize();
-          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(68), 15, 1.1);
+
+        if (this.attackPatternIdx % 2 === 1) {
+          // Spaced Hangar Bay V-Arc Bomb Curtain (5-7 glowing slow-arcing bombs with clear lanes!)
+          const half = bulletDensityMult >= 1.35 ? 3 : 2;
+          for (let k = -half; k <= half; k++) {
+            const target = leadPos.clone().add(new THREE.Vector3(k * 3.4, Math.abs(k) * 0.9 - 1.0, 0));
+            const dir = target.sub(origin).normalize();
+            projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(54 * projSpeedMult), dmg(14), 1.08);
+          }
+        } else {
+          // Focused Core Tri-Burst (great reflect chance!)
+          for (let k = -1; k <= 1; k++) {
+            const target = leadPos.clone().add(new THREE.Vector3(k * 2.4, 0, 0));
+            const dir = target.sub(origin).normalize();
+            projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(64 * projSpeedMult), dmg(15), 1.05);
+          }
         }
       }
       return;
     }
 
-    // ===== SECTOR 2: OCTA-CORE SENTINEL SIGNATURE ATTACKS =====
+    // ===== SECTOR 2: OCTA-CORE SENTINEL — REFLECT & SACRED GEOMETRY =====
     if (this.bossId === 'octa_core_sentinel') {
       if (this.phase === 2 && !this.sweepBeamActive && this.attackPatternIdx % 3 === 0) {
-        // Rotating X-Cross Laser Cage!
-        this.scheduleTelegraphedBeam('cross', 2.2, onTelegraph);
+        // Readable Rotating X-Cross Laser Cage!
+        this.scheduleTelegraphedBeam('cross', 2.25, onTelegraph);
         return;
       }
       this.root.getWorldPosition(origin);
-      // Signature HUGE Charged Reflector Orb dead-center (reflect it back to shatter prism shields!)
-      const aimed = leadPos.clone().sub(origin).normalize().multiplyScalar(64);
-      projectiles.spawnEnemyPlasma(origin, aimed, 16, 1.4);
+      // Signature HUGE slow-moving Charged Reflector Orb dead-center (barrel-roll to SHATTER prism shields!)
+      const aimed = playerPos.clone().sub(origin).normalize().multiplyScalar(50 * projSpeedMult);
+      projectiles.spawnEnemyPlasma(origin, aimed, dmg(15), 1.4);
 
-      // Alternating CW/CCW Sacred-Geometry Double-Helix Curtain
-      const ringCount = Math.round((this.phase === 2 ? 10 : 7) * bulletDensityMult);
-      const twist = this.attackPatternIdx % 2 === 0 ? 1 : -1;
-      for (let i = 0; i < ringCount; i++) {
-        const a = (i / ringCount) * Math.PI * 2 + this.age * 1.5 * twist;
-        const vel = new THREE.Vector3(Math.cos(a) * 16.5, Math.sin(a) * 11.5, 60);
-        projectiles.spawnEnemyPlasma(origin, vel, 13, 0.92);
+      if (this.attackPatternIdx % 2 === 1) {
+        // Spaced Sacred-Geometry Ring with clean radial dodge lanes
+        const ringCount = Math.round((this.phase === 2 ? 10 : 8) * bulletDensityMult);
+        const twist = this.attackPatternIdx % 4 === 1 ? 1 : -1;
+        for (let i = 0; i < ringCount; i++) {
+          const a = (i / ringCount) * Math.PI * 2 + this.age * 1.4 * twist;
+          const vel = new THREE.Vector3(Math.cos(a) * 14.5, Math.sin(a) * 9.5, 52 * projSpeedMult);
+          projectiles.spawnEnemyPlasma(origin, vel, dmg(13), 0.92);
+        }
+      } else {
+        // Cross-Diamond Prism Burst (4 outer corner shots + center reflector orb!)
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.PI / 4 + this.age * 0.6;
+          const vel = new THREE.Vector3(Math.cos(a) * 10.5, Math.sin(a) * 6.8, 56 * projSpeedMult);
+          projectiles.spawnEnemyPlasma(origin, vel, dmg(13), 0.94);
+        }
       }
       return;
     }
 
-    // ===== SECTOR 3: SOLARIS LEVIATHAN SIGNATURE ATTACKS =====
+    // ===== SECTOR 3: SOLARIS LEVIATHAN — WEAVING SERPENT & SOLAR MAW =====
     if (this.phase === 2 && !this.sweepBeamActive && this.attackPatternIdx % 3 === 0) {
-      // Solar Maw Hyper-Beam (Horizontal or Vertical!)
-      this.scheduleTelegraphedBeam(Math.random() < 0.5 ? 'horizontal' : 'vertical', 1.6, onTelegraph);
+      // Solar Maw Hyper-Beam (Horizontal, Vertical, or rare X-Cross!)
+      const axis =
+        this.attackPatternIdx % 9 === 0
+          ? 'cross'
+          : Math.random() < 0.5
+            ? 'horizontal'
+            : 'vertical';
+      this.scheduleTelegraphedBeam(axis, axis === 'cross' ? 2.1 : 1.55, onTelegraph);
       return;
     }
 
     if (this.phase === 1) {
-      // Segmented Body Broadside: alive body segments fire a cascading wave!
-      const aliveSegs = this.parts.filter((p) => p.isSerpentSegment && p.alive);
-      const shooters = aliveSegs.length > 0 ? aliveSegs.slice(0, 3) : [this.parts[0]];
-      for (const seg of shooters) {
-        if (!seg) continue;
-        seg.getPosition(origin);
-        const dir = leadPos.clone().sub(origin).normalize();
-        projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(74), 14, 0.98);
+      if (this.attackPatternIdx % 2 === 1) {
+        // Segmented Body Broadside: 3 alive segments fire readable staggered shots!
+        const aliveSegs = this.parts.filter((p) => p.isSerpentSegment && p.alive);
+        const shooters = aliveSegs.length > 0 ? aliveSegs.slice(0, 3) : [this.parts[0]];
+        for (const seg of shooters) {
+          if (!seg) continue;
+          seg.getPosition(origin);
+          const dir = leadPos.clone().sub(origin).normalize();
+          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(60 * projSpeedMult), dmg(14), 0.98);
+        }
+      } else {
+        // Solar Maw 3–5 Way Fan from Dragon Head!
+        this.root.getWorldPosition(origin);
+        const half = bulletDensityMult >= 1.35 ? 2 : 1;
+        for (let k = -half; k <= half; k++) {
+          const target = leadPos.clone().add(new THREE.Vector3(k * 3.0, Math.abs(k) * 0.5, 0));
+          const dir = target.sub(origin).normalize();
+          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(62 * projSpeedMult), dmg(14), 1.02);
+        }
       }
     } else {
-      // Leviathan Supernova Ring + Aimed Maw Fang Volley!
+      // Phase 2 Enraged Dragon: Alternating Supernova Spiral Ring and 3-Shot Maw Fang Burst!
       this.root.getWorldPosition(origin);
-      const ringN = Math.round(10 * bulletDensityMult);
-      for (let i = 0; i < ringN; i++) {
-        const a = (i / ringN) * Math.PI * 2 + this.age;
-        const vel = new THREE.Vector3(Math.cos(a) * 18, Math.sin(a) * 12, 66);
-        projectiles.spawnEnemyPlasma(origin, vel, 14, 0.96);
+      if (this.attackPatternIdx % 2 === 1) {
+        const ringN = Math.round(10 * bulletDensityMult);
+        for (let i = 0; i < ringN; i++) {
+          const a = (i / ringN) * Math.PI * 2 + this.age * 1.2;
+          const vel = new THREE.Vector3(Math.cos(a) * 15.5, Math.sin(a) * 10.2, 58 * projSpeedMult);
+          projectiles.spawnEnemyPlasma(origin, vel, dmg(14), 0.96);
+        }
+      } else {
+        for (let k = -1; k <= 1; k++) {
+          const target = leadPos.clone().add(new THREE.Vector3(k * 2.5, 0, 0));
+          const dir = target.sub(origin).normalize();
+          projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(68 * projSpeedMult), dmg(16), 1.12);
+        }
       }
-      for (let k = -1; k <= 1; k++) {
-        const target = leadPos.clone().add(new THREE.Vector3(k * 2.6, 0, 0));
-        const dir = target.sub(origin).normalize();
-        projectiles.spawnEnemyPlasma(origin, dir.multiplyScalar(82), 16, 1.15);
-      }
+    }
+  }
+
+  /**
+   * Dramatic 1.65s Star-Fox-style chain-reaction meltdown before final supernova detonation!
+   */
+  public updateDeathMeltdown(
+    dt: number,
+    onChainExplosion: (pos: THREE.Vector3, intensity: number) => void,
+    onFinalDetonation: (pos: THREE.Vector3) => void
+  ): void {
+    if (!this.dying) return;
+    this.deathTimer -= dt;
+    const prog = Math.min(1, 1 - this.deathTimer / 1.65);
+
+    // Violently shudder, list sideways, sink downward, and flash core light!
+    this.root.position.x += (Math.random() - 0.5) * (0.85 + prog * 1.4);
+    this.root.position.y -= (1.4 + prog * 2.2) * dt;
+    this.root.rotation.z += dt * (0.9 + prog * 2.2);
+    this.root.rotation.x += dt * 0.45;
+    if (this.coreLight) {
+      this.coreLight.color.setHex(Math.floor(this.deathTimer * 26) % 2 === 0 ? 0xffffff : 0xff4400);
+      this.coreLight.intensity = 14 + prog * 24;
+    }
+
+    // Flash remaining hull white on rapid strobe
+    const strobeWhite = Math.floor(this.deathTimer * 22) % 2 === 0;
+    for (const p of this.parts) {
+      if (!p.mesh.visible) continue;
+      p.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          if (strobeWhite) {
+            obj.material = WHITE_MAT;
+          } else {
+            const orig = p.originalMats.get(obj);
+            if (orig) obj.material = orig;
+          }
+        }
+      });
+    }
+
+    this.deathBoomTimer -= dt;
+    if (this.deathBoomTimer <= 0) {
+      this.deathBoomTimer = Math.max(0.08, 0.17 - prog * 0.08);
+      const boomPos = this.root.position
+        .clone()
+        .add(new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 6));
+      onChainExplosion(boomPos, 0.55 + prog * 0.85);
+    }
+
+    if (this.deathTimer <= 0) {
+      this.dying = false;
+      const finalPos = this.root.position.clone();
+      this.scene.remove(this.root);
+      onFinalDetonation(finalPos);
     }
   }
 
   public clear(): void {
     this.active = false;
+    this.dying = false;
+    this.deathTimer = 0;
     this.sweepBeamActive = false;
     this.chargeTimer = 0;
     this.pendingAttack = null;

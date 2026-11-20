@@ -18,8 +18,12 @@ export interface DifficultyConfig {
   shortBadge: string;
   description: string;
   enemyFireRateMult: number;
+  enemyHpMult: number;
+  bossHpMult: number;
   bossAggressionMult: number;
   bulletDensityMult: number;
+  projectileSpeedMult: number;
+  damageTakenMult: number;
   ringHealAmount: number;
   scoreMult: number;
 }
@@ -29,10 +33,14 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
     id: 'rookie',
     label: 'ROOKIE',
     shortBadge: 'ROOKIE',
-    description: 'Forgiving shields, classic arcade pace.',
-    enemyFireRateMult: 0.9,
-    bossAggressionMult: 0.9,
-    bulletDensityMult: 1.0,
+    description: 'Classic arcade challenge, forgiving shields, generous supply drops.',
+    enemyFireRateMult: 0.95,
+    enemyHpMult: 0.95,
+    bossHpMult: 0.8,
+    bossAggressionMult: 0.88,
+    bulletDensityMult: 0.95,
+    projectileSpeedMult: 0.92,
+    damageTakenMult: 0.85,
     ringHealAmount: 18,
     scoreMult: 1.0,
   },
@@ -40,23 +48,31 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
     id: 'ace',
     label: 'ACE (RECOMMENDED)',
     shortBadge: 'ACE',
-    description: '+35% enemy fire rate, faster boss phases, tighter shields.',
-    enemyFireRateMult: 1.35,
-    bossAggressionMult: 1.2,
-    bulletDensityMult: 1.25,
-    ringHealAmount: 12,
-    scoreMult: 1.2,
+    description: 'Tactical arcade intensity, fierce multi-phase bosses, 1.3x score.',
+    enemyFireRateMult: 1.22,
+    enemyHpMult: 1.15,
+    bossHpMult: 1.05,
+    bossAggressionMult: 1.12,
+    bulletDensityMult: 1.15,
+    projectileSpeedMult: 1.06,
+    damageTakenMult: 1.05,
+    ringHealAmount: 14,
+    scoreMult: 1.3,
   },
   maximum: {
     id: 'maximum',
     label: 'MAXIMUM BOOT-N-ASS',
     shortBadge: 'MAX BNA',
-    description: 'Bullet-hell density, 2x aggression, 1.5x score multiplier!',
-    enemyFireRateMult: 2.0,
-    bossAggressionMult: 1.45,
-    bulletDensityMult: 1.65,
+    description: 'Dense bullet curtains, lethal multi-phase bosses, 1.75x score!',
+    enemyFireRateMult: 1.6,
+    enemyHpMult: 1.45,
+    bossHpMult: 1.38,
+    bossAggressionMult: 1.38,
+    bulletDensityMult: 1.45,
+    projectileSpeedMult: 1.22,
+    damageTakenMult: 1.35,
     ringHealAmount: 10,
-    scoreMult: 1.5,
+    scoreMult: 1.75,
   },
 };
 
@@ -87,6 +103,8 @@ export interface SRankBreakdown {
   criteria: Array<{ label: string; actual: string; target: string; passed: boolean }>;
 }
 
+const SETTINGS_KEY = 'bootnass_settings_v1';
+
 export class GameState {
   public phase: GamePhase = 'Boot';
   public currentLevelIndex = 0;
@@ -96,6 +114,48 @@ export class GameState {
   public muted = false;
 
   public stats: RunStats = this.createFreshStats(100);
+
+  constructor() {
+    this.loadSettings();
+  }
+
+  public loadSettings(): void {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<{
+        difficulty: DifficultyId;
+        mouseAimEnabled: boolean;
+        muted: boolean;
+      }>;
+      if (parsed.difficulty && parsed.difficulty in DIFFICULTIES) {
+        this.difficulty = parsed.difficulty;
+      }
+      if (typeof parsed.mouseAimEnabled === 'boolean') {
+        this.mouseAimEnabled = parsed.mouseAimEnabled;
+      }
+      if (typeof parsed.muted === 'boolean') {
+        this.muted = parsed.muted;
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  public saveSettings(): void {
+    try {
+      window.localStorage.setItem(
+        SETTINGS_KEY,
+        JSON.stringify({
+          difficulty: this.difficulty,
+          mouseAimEnabled: this.mouseAimEnabled,
+          muted: this.muted,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   public get difficultyConfig(): DifficultyConfig {
     return DIFFICULTIES[this.difficulty];
@@ -197,7 +257,7 @@ export class GameState {
     const cAcc = accuracy >= 60;
     const cHull = hullDmgPct < 25;
     const cGates = gates >= 2;
-    const cBoss = bossTime > 0 ? bossTime <= 45 : true;
+    const cBoss = bossTime > 0 ? bossTime <= 70 : true;
 
     const passedCount = [cAcc, cHull, cGates, cBoss].filter(Boolean).length;
 
@@ -223,7 +283,7 @@ export class GameState {
         {
           label: 'BOSS CLEAR TIME',
           actual: bossTime > 0 ? `${bossTime}s` : '—',
-          target: '<= 45s',
+          target: '<= 70s',
           passed: cBoss,
         },
       ],

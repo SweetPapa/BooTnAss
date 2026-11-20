@@ -444,7 +444,7 @@ export class EnvironmentRig {
       }
       curve.offsetAtZ(c.baseZ, off);
       c.group.position.set(off.dx, off.dy, c.baseZ);
-      // Subtle horizon tilt into the curve for Super Mario Galaxy coaster vibes!
+      // Subtle horizon tilt into the curve for dynamic space-coaster vibes!
       const depthT = Math.min(1, Math.max(0, -c.baseZ) / 140);
       c.group.rotation.z = -curve.bankRoll * depthT * 0.55;
     }

@@ -638,6 +638,161 @@ export class AudioSynth {
     }
   }
 
+  /** Dramatic spiraling-out engine power-down whine + urgent cockpit Mayday klaxon! */
+  public playShipPowerDown(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    // Falling turbine whine
+    const turbine = this.ctx.createOscillator();
+    const tg = this.ctx.createGain();
+    turbine.type = 'sawtooth';
+    turbine.frequency.setValueAtTime(640, now);
+    turbine.frequency.exponentialRampToValueAtTime(68, now + 1.35);
+    tg.gain.setValueAtTime(0.26, now);
+    tg.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+    turbine.connect(tg);
+    tg.connect(this.masterGain);
+    turbine.start(now);
+    turbine.stop(now + 1.42);
+
+    // Urgent dual-tone cockpit MAYDAY klaxon (4 rapid pulses)
+    for (let i = 0; i < 4; i++) {
+      const t = now + i * 0.28;
+      const klax = this.ctx.createOscillator();
+      const kg = this.ctx.createGain();
+      klax.type = 'square';
+      klax.frequency.setValueAtTime(920, t);
+      klax.frequency.setValueAtTime(680, t + 0.11);
+      kg.gain.setValueAtTime(0.14, t);
+      kg.gain.exponentialRampToValueAtTime(0.001, t + 0.23);
+      klax.connect(kg);
+      kg.connect(this.masterGain);
+      klax.start(t);
+      klax.stop(t + 0.25);
+    }
+  }
+
+  /** Massive multi-stage player ship detonation! */
+  public playShipDetonate(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const dur = 1.35;
+
+    // Deep shattering sub-bass drop
+    const sub = this.ctx.createOscillator();
+    const sg = this.ctx.createGain();
+    sub.type = 'sawtooth';
+    sub.frequency.setValueAtTime(140, now);
+    sub.frequency.exponentialRampToValueAtTime(18, now + dur);
+    sg.gain.setValueAtTime(0.68, now);
+    sg.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    sub.connect(sg);
+    sg.connect(this.masterGain);
+    sub.start(now);
+    sub.stop(now + dur + 0.04);
+
+    // Roaring explosion noise with slow filter sweep
+    const bufferSize = Math.floor(this.ctx.sampleRate * dur);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      const env = Math.pow(1 - i / bufferSize, 1.15);
+      data[i] = (Math.random() * 2 - 1) * env;
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2400, now);
+    filter.frequency.exponentialRampToValueAtTime(95, now + dur);
+    const ng = this.ctx.createGain();
+    ng.gain.setValueAtTime(0.5, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    noise.connect(filter);
+    filter.connect(ng);
+    ng.connect(this.masterGain);
+    noise.start(now);
+  }
+
+  /** Escalating chain-reaction explosion boom during boss meltdown! */
+  public playBossChainBoom(intensity = 1.0): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const dur = 0.25 + intensity * 0.22;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(125 + intensity * 55, now);
+    osc.frequency.exponentialRampToValueAtTime(24, now + dur);
+    g.gain.setValueAtTime(0.32 + intensity * 0.2, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+  }
+
+  /** Crisp electric near-miss GRAZE zing! */
+  public playGraze(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1650, now);
+    osc.frequency.exponentialRampToValueAtTime(2800, now + 0.08);
+    g.gain.setValueAtTime(0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.11);
+  }
+
+  /** Subtle urgent cockpit critical-hull warning ping */
+  public playLowShieldBeep(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1040, now);
+    osc.frequency.setValueAtTime(780, now + 0.07);
+    g.gain.setValueAtTime(0.09, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }
+
+  /** Thrilling hyper-warp zoom-in thruster sweep on sector entry! */
+  public playWarpEntry(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const osc2 = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc2.type = 'triangle';
+    osc.frequency.setValueAtTime(95, now);
+    osc.frequency.exponentialRampToValueAtTime(620, now + 0.45);
+    osc.frequency.exponentialRampToValueAtTime(190, now + 0.9);
+    osc2.frequency.setValueAtTime(190, now);
+    osc2.frequency.exponentialRampToValueAtTime(1240, now + 0.45);
+    osc2.frequency.exponentialRampToValueAtTime(380, now + 0.9);
+    g.gain.setValueAtTime(0.16, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+    osc.connect(g);
+    osc2.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc2.start(now);
+    osc.stop(now + 0.96);
+    osc2.stop(now + 0.96);
+  }
+
   /**
    * Plays a pre-generated home-lab Kokoro TTS voiceover MP3 with optional sci-fi radio bandpass filter.
    * Never cuts off or plays over an active voiceover unless `forceInterrupt` is true!

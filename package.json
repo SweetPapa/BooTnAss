@@ -1,5 +1,5 @@
 {
-  "name": "starburst",
+  "name": "boot-n-ass",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -8,15 +8,22 @@
     "lan": "./scripts/launch-lan.sh",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "gen-level": "node scripts/gen-level.mjs"
+    "gen-level": "node scripts/gen-level.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@fontsource/orbitron": "^5.3.0",
+    "@fontsource/rajdhani": "^5.3.0",
+    "@tauri-apps/api": "^2.12.5",
     "js-yaml": "^4.1.0",
     "postprocessing": "^6.36.7",
     "three": "^0.175.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.6",
     "@types/js-yaml": "^4.0.9",
     "@types/three": "^0.175.0",
     "typescript": "^5.7.3",

@@ -20,6 +20,7 @@ export interface CollisionCallbacks {
   ) => void;
   onPlayerDamaged: (amount: number, pos: THREE.Vector3, source: 'projectile' | 'obstacle' | 'beam' | 'enemy') => void;
   onDeflectShot: (proj: Projectile) => void;
+  onGraze?: (pos: THREE.Vector3) => void;
   onBoostRing: (obs: ObstacleEntity) => void;
   onSlalomGate: (obs: ObstacleEntity) => void;
   onWeaponCrate: (obs: ObstacleEntity) => void;
@@ -48,12 +49,13 @@ export class CollisionSystem {
     obstacles: ObstacleFactory,
     boss: BossController,
     cb: CollisionCallbacks,
-    mods?: { deflectRadiusBonus?: number; pickupRadiusMult?: number }
+    mods?: { deflectRadiusBonus?: number; pickupRadiusMult?: number; damageTakenMult?: number }
   ): void {
     const playerPos = player.position;
-    const playerRadius = 1.55;
-    const deflectRadius = 3.25 + (mods?.deflectRadiusBonus ?? 0);
+    const playerRadius = 1.18;
+    const deflectRadius = 3.4 + (mods?.deflectRadiusBonus ?? 0);
     const pickupMult = mods?.pickupRadiusMult ?? 1.0;
+    const dmgMult = mods?.damageTakenMult ?? 1.0;
 
     // 1. Projectiles vs Targets
     for (const proj of projectiles.projectiles) {
@@ -70,10 +72,17 @@ export class CollisionSystem {
         }
 
         const r = playerRadius + proj.radius;
-        if (distSqPointToSegment(playerPos, proj.prevPos, proj.pos) <= r * r) {
+        const dSq = distSqPointToSegment(playerPos, proj.prevPos, proj.pos);
+        if (dSq <= r * r) {
           proj.active = false;
           if (player.takeDamage(proj.damage)) {
             cb.onPlayerDamaged(proj.damage, playerPos, 'projectile');
+          }
+        } else if (!proj.grazed && !player.isInvulnerable && cb.onGraze && proj.pos.z > -4.5 && proj.pos.z < 4.5) {
+          const grazeR = r + 1.55;
+          if (dSq <= grazeR * grazeR) {
+            proj.grazed = true;
+            cb.onGraze(proj.pos.clone());
           }
         }
         continue;
@@ -145,8 +154,9 @@ export class CollisionSystem {
       if (dz < 2.6) {
         const dist = e.mesh.position.distanceTo(playerPos);
         if (dist < e.radius + playerRadius) {
-          if (player.takeDamage(18)) {
-            cb.onPlayerDamaged(18, playerPos, 'enemy');
+          const ramDmg = Math.round(20 * dmgMult);
+          if (player.takeDamage(ramDmg)) {
+            cb.onPlayerDamaged(ramDmg, playerPos, 'enemy');
           }
           enemies.damageEnemy(e, 999);
           cb.onEnemyKilled(e, e.mesh.position.clone());
@@ -192,8 +202,9 @@ export class CollisionSystem {
       ) {
         const dxy = Math.hypot(playerPos.x - pos.x, playerPos.y - pos.y);
         if (dxy < obs.hitRadius + 1.05) {
-          if (player.takeDamage(22)) {
-            cb.onPlayerDamaged(22, playerPos, 'obstacle');
+          const dmg = Math.round(24 * dmgMult);
+          if (player.takeDamage(dmg)) {
+            cb.onPlayerDamaged(dmg, playerPos, 'obstacle');
           }
           obstacles.damageCrystal(obs, 999);
           cb.onCrystalDestroyed(obs, obs.mesh.position.clone());
@@ -201,8 +212,9 @@ export class CollisionSystem {
       } else if (obs.kind === 'monolith_pillar' && obs.halfExtents) {
         const dx = Math.abs(playerPos.x - pos.x);
         if (dx < obs.halfExtents.x + 1.15) {
-          if (player.takeDamage(24)) {
-            cb.onPlayerDamaged(24, playerPos, 'obstacle');
+          const dmg = Math.round(26 * dmgMult);
+          if (player.takeDamage(dmg)) {
+            cb.onPlayerDamaged(dmg, playerPos, 'obstacle');
           }
         }
       } else if (obs.kind === 'arch_gate') {
@@ -212,8 +224,9 @@ export class CollisionSystem {
         const hitPillar = dx > gap - 0.7 * obs.scale && dx < gap + 2.6 * obs.scale;
         const hitTop = dx < gap + 2.6 * obs.scale && dy > 3.1 * obs.scale && dy < 6.0 * obs.scale;
         if (hitPillar || hitTop) {
-          if (player.takeDamage(22)) {
-            cb.onPlayerDamaged(22, playerPos, 'obstacle');
+          const dmg = Math.round(24 * dmgMult);
+          if (player.takeDamage(dmg)) {
+            cb.onPlayerDamaged(dmg, playerPos, 'obstacle');
           }
         }
       } else if (obs.kind === 'laser_bar' && obs.halfExtents) {
@@ -224,8 +237,9 @@ export class CollisionSystem {
         const lx = rx * cos - ry * sin;
         const ly = rx * sin + ry * cos;
         if (Math.abs(lx) < obs.halfExtents.x + 0.9 && Math.abs(ly) < obs.halfExtents.y + 0.75) {
-          if (player.takeDamage(24)) {
-            cb.onPlayerDamaged(24, playerPos, 'beam');
+          const dmg = Math.round(26 * dmgMult);
+          if (player.takeDamage(dmg)) {
+            cb.onPlayerDamaged(dmg, playerPos, 'beam');
           }
         }
       } else if (obs.kind === 'spinner_cross' && obs.halfExtents) {
@@ -238,8 +252,9 @@ export class CollisionSystem {
         const hitBlade1 = Math.abs(lx) < obs.halfExtents.x + 0.8 && Math.abs(ly) < obs.halfExtents.y + 0.65;
         const hitBlade2 = Math.abs(ly) < obs.halfExtents.x + 0.8 && Math.abs(lx) < obs.halfExtents.y + 0.65;
         if (hitBlade1 || hitBlade2) {
-          if (player.takeDamage(24)) {
-            cb.onPlayerDamaged(24, playerPos, 'beam');
+          const dmg = Math.round(26 * dmgMult);
+          if (player.takeDamage(dmg)) {
+            cb.onPlayerDamaged(dmg, playerPos, 'beam');
           }
         }
       }
@@ -247,22 +262,23 @@ export class CollisionSystem {
 
     // 4. Player vs Boss Sweeping Laser Walls (Horizontal, Vertical, AND Octa-Core Sentinel Rotating X-Cross!)
     if (boss.active && boss.sweepBeamActive) {
-      if (boss.sweepAxis === 'horizontal' && Math.abs(playerPos.y - boss.sweepBeamPos) < 1.55) {
-        if (player.takeDamage(20)) {
-          cb.onPlayerDamaged(20, playerPos, 'beam');
+      const beamDmg = Math.round(20 * dmgMult);
+      if (boss.sweepAxis === 'horizontal' && Math.abs(playerPos.y - boss.sweepBeamPos) < 1.35) {
+        if (player.takeDamage(beamDmg)) {
+          cb.onPlayerDamaged(beamDmg, playerPos, 'beam');
         }
-      } else if (boss.sweepAxis === 'vertical' && Math.abs(playerPos.x - boss.sweepBeamPos) < 1.75) {
-        if (player.takeDamage(20)) {
-          cb.onPlayerDamaged(20, playerPos, 'beam');
+      } else if (boss.sweepAxis === 'vertical' && Math.abs(playerPos.x - boss.sweepBeamPos) < 1.5) {
+        if (player.takeDamage(beamDmg)) {
+          cb.onPlayerDamaged(beamDmg, playerPos, 'beam');
         }
       } else if (boss.sweepAxis === 'cross') {
         const cos = Math.cos(-boss.sweepCrossAngle);
         const sin = Math.sin(-boss.sweepCrossAngle);
         const lx = playerPos.x * cos - playerPos.y * sin;
         const ly = playerPos.x * sin + playerPos.y * cos;
-        if (Math.abs(lx) < 1.45 || Math.abs(ly) < 1.45) {
-          if (player.takeDamage(20)) {
-            cb.onPlayerDamaged(20, playerPos, 'beam');
+        if (Math.abs(lx) < 1.3 || Math.abs(ly) < 1.3) {
+          if (player.takeDamage(beamDmg)) {
+            cb.onPlayerDamaged(beamDmg, playerPos, 'beam');
           }
         }
       }

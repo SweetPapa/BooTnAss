@@ -1,7 +1,7 @@
 id: "neon-canyon"
 name: "01 // NEON CANYON"
 subtitle: "Outer Rim Trench Run"
-baseSpeed: 50
+baseSpeed: 52
 length: 4200
 
 environment:
@@ -22,10 +22,10 @@ timeline:
     type: "wave"
     enemy: "scout"
     formation: "v_shape"
-    count: 5
+    count: 6
     spawnOffset: { x: 0, y: 1.5 }
     behavior: "swoop_pass"
-    fireRate: 0.65
+    fireRate: 0.8
 
   - atDistance: 390
     type: "obstacle"
@@ -45,10 +45,10 @@ timeline:
     type: "wave"
     enemy: "scout"
     formation: "line"
-    count: 5
+    count: 6
     spawnOffset: { x: 0, y: 0 }
     behavior: "straight"
-    fireRate: 0.75
+    fireRate: 0.9
 
   - atDistance: 760
     type: "obstacle"
@@ -82,10 +82,10 @@ timeline:
     type: "wave"
     enemy: "weaver"
     formation: "v_shape"
-    count: 5
+    count: 6
     spawnOffset: { x: 0, y: 1 }
     behavior: "sine_weave"
-    fireRate: 0.85
+    fireRate: 0.95
 
   - atDistance: 1340
     type: "obstacle"
@@ -105,10 +105,10 @@ timeline:
     type: "wave"
     enemy: "scout"
     formation: "flanking"
-    count: 6
+    count: 7
     spawnOffset: { x: 0, y: 0 }
     behavior: "swoop_pass"
-    fireRate: 0.85
+    fireRate: 1.0
 
   - atDistance: 1740
     type: "obstacle"
@@ -133,7 +133,7 @@ timeline:
     count: 4
     spawnOffset: { x: 0, y: 0.5 }
     behavior: "hover_fire"
-    fireRate: 1.0
+    fireRate: 1.05
 
   - atDistance: 2180
     type: "banner"
@@ -157,10 +157,10 @@ timeline:
     type: "wave"
     enemy: "weaver"
     formation: "spiral"
-    count: 6
+    count: 7
     spawnOffset: { x: 0, y: 0 }
     behavior: "sine_weave"
-    fireRate: 0.95
+    fireRate: 1.05
 
   - atDistance: 2700
     type: "obstacle"
@@ -183,7 +183,7 @@ timeline:
     count: 5
     spawnOffset: { x: 0, y: 1 }
     behavior: "swoop_pass"
-    fireRate: 1.1
+    fireRate: 1.15
 
   - atDistance: 3120
     type: "obstacle"
@@ -223,5 +223,5 @@ timeline:
     type: "boss"
     bossId: "aegis_dreadnought"
     name: "AEGIS DREADNOUGHT"
-    hp: 950
+    hp: 2500
     phases: 2

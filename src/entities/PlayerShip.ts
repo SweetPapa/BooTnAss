@@ -50,12 +50,24 @@ export class PlayerShip {
   public fireCooldown = 0;
 
   // Visual sub-parts
+  private readonly scene: THREE.Scene;
   private readonly shipMesh = new THREE.Group();
   private readonly deflectBubble: THREE.Mesh;
   private readonly thrusterGlowLeft: THREE.Mesh;
   private readonly thrusterGlowRight: THREE.Mesh;
   private readonly shipLight: THREE.PointLight;
   private readonly ribbonMat: THREE.LineBasicMaterial;
+
+  // Dramatic Death Spiral + Physical 3D Wreckage Chunks!
+  public isDying = false;
+  public isDetonated = false;
+  private deathTimer = 0;
+  private deathSpinVel = 1;
+  private deathSparkTimer = 0;
+  private wreckage: Array<{ mesh: THREE.Mesh; vel: THREE.Vector3; rotVel: THREE.Vector3 }> = [];
+
+  // Hyper-warp entry Z offset
+  private entryZOffset = 0;
 
   // Wingtip ribbon trails
   private readonly ribbonPoints = 18;
@@ -70,6 +82,7 @@ export class PlayerShip {
   private yaw = 0;
 
   constructor(scene: THREE.Scene) {
+    this.scene = scene;
     this.root.add(this.shipMesh);
 
     const hullMat = new THREE.MeshStandardMaterial({
@@ -239,6 +252,12 @@ export class PlayerShip {
   }
 
   public reset(): void {
+    this.clearWreckage();
+    this.isDying = false;
+    this.isDetonated = false;
+    this.deathTimer = 0;
+    this.deathSparkTimer = 0;
+    this.entryZOffset = 0;
     this.position.set(0, 0, 0);
     this.velocity.set(0, 0, 0);
     this.shield = this.maxShield;
@@ -257,28 +276,221 @@ export class PlayerShip {
     this.bankPitch = 0;
     this.yaw = 0;
     this.root.position.copy(this.position);
+    this.root.position.z += this.entryZOffset;
     this.root.visible = true;
+    this.shipMesh.visible = true;
+    this.leftRibbonLine.visible = true;
+    this.rightRibbonLine.visible = true;
     for (let i = 0; i < this.ribbonPoints; i++) {
       this.leftRibbonHistory[i].set(-2.6, 0, i * 0.6);
       this.rightRibbonHistory[i].set(2.6, 0, i * 0.6);
     }
   }
 
+  public setEntryZOffset(zOffset: number): void {
+    this.entryZOffset = zOffset;
+    this.root.position.z = this.position.z + zOffset;
+  }
+
+  public startDeathSpiral(): void {
+    this.clearWreckage();
+    this.isDying = true;
+    this.isDetonated = false;
+    this.deathTimer = 0;
+    this.deathSparkTimer = 0;
+    this.deathSpinVel = Math.random() < 0.5 ? 1 : -1;
+    this.hitInvulnTimer = 0;
+    this.shipMesh.visible = true;
+    this.root.visible = true;
+    (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = 0;
+    this.shipLight.color.setHex(0xff3322);
+    this.shipLight.intensity = 10;
+  }
+
+  private clearWreckage(): void {
+    for (const w of this.wreckage) {
+      this.scene.remove(w.mesh);
+      w.mesh.geometry.dispose();
+    }
+    this.wreckage = [];
+  }
+
+  private spawnWreckage(): void {
+    const hullMat = new THREE.MeshStandardMaterial({
+      color: 0xdbe9ff,
+      emissive: new THREE.Color(0xff5511),
+      emissiveIntensity: 1.4,
+      metalness: 0.4,
+      roughness: 0.35,
+      flatShading: true,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({
+      color: 0x1a2644,
+      emissive: new THREE.Color(0xff2200),
+      emissiveIntensity: 1.8,
+      flatShading: true,
+    });
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0xffaa22).multiplyScalar(2.8),
+      toneMapped: false,
+    });
+
+    const pieces: Array<{ geo: THREE.BufferGeometry; mat: THREE.Material; vel: THREE.Vector3 }> = [
+      // Left delta wing flying left & spinning
+      { geo: new THREE.BoxGeometry(2.3, 0.16, 1.3), mat: hullMat, vel: new THREE.Vector3(-12, 4.5, -4) },
+      // Right delta wing flying right & spinning
+      { geo: new THREE.BoxGeometry(2.3, 0.16, 1.3), mat: hullMat, vel: new THREE.Vector3(12, 5.2, -3) },
+      // Nose cone shooting forward-up
+      { geo: new THREE.ConeGeometry(0.58, 2.8, 4), mat: hullMat, vel: new THREE.Vector3(1.5, 7.5, -14) },
+      // Rear chassis tumbling down
+      { geo: new THREE.BoxGeometry(1.1, 0.55, 1.6), mat: darkMat, vel: new THREE.Vector3(-3.5, -6.5, -6) },
+      // Blazing cockpit/thruster core
+      { geo: new THREE.OctahedronGeometry(0.65, 0), mat: coreMat, vel: new THREE.Vector3(4.2, -2.8, -10) },
+    ];
+
+    for (const p of pieces) {
+      const m = new THREE.Mesh(p.geo, p.mat);
+      m.position.copy(this.root.position);
+      this.scene.add(m);
+      this.wreckage.push({
+        mesh: m,
+        vel: p.vel.clone(),
+        rotVel: new THREE.Vector3(
+          (Math.random() - 0.5) * 16,
+          (Math.random() - 0.5) * 16,
+          (Math.random() - 0.5) * 18
+        ),
+      });
+    }
+  }
+
+  public updateDeathSequence(
+    dt: number,
+    railSpeed: number,
+    onFireTrail: (pos: THREE.Vector3, big: boolean) => void,
+    onDetonate: (pos: THREE.Vector3) => void
+  ): 'spiraling' | 'detonated' | 'done' {
+    this.deathTimer += dt;
+
+    // Phase A (0.0s -> 1.45s): Frantic burning death spiral!
+    if (!this.isDetonated) {
+      const prog = Math.min(1, this.deathTimer / 1.45);
+      // Spiral outward, pitch nose down, violently shudder and roll!
+      this.position.x = THREE.MathUtils.clamp(
+        this.position.x + Math.sin(this.deathTimer * 5.2) * 5.5 * dt * this.deathSpinVel,
+        PLAY_BOUNDS.minX + 1.5,
+        PLAY_BOUNDS.maxX - 1.5
+      );
+      this.position.y = THREE.MathUtils.clamp(
+        this.position.y - (2.4 + prog * 3.8) * dt,
+        PLAY_BOUNDS.minY + 1.0,
+        PLAY_BOUNDS.maxY
+      );
+      this.root.position.set(
+        this.position.x + (Math.random() - 0.5) * 0.35,
+        this.position.y + (Math.random() - 0.5) * 0.35,
+        -prog * 4.5
+      );
+      this.shipMesh.rotation.z += dt * (9.5 + prog * 12) * this.deathSpinVel;
+      this.shipMesh.rotation.x = THREE.MathUtils.lerp(this.shipMesh.rotation.x, -0.58, dt * 4);
+      this.shipMesh.rotation.y += dt * 3.5 * this.deathSpinVel;
+      this.shipLight.intensity = 6 + Math.sin(this.deathTimer * 45) * 6;
+
+      this.deathSparkTimer -= dt;
+      if (this.deathSparkTimer <= 0) {
+        this.deathSparkTimer = 0.055;
+        onFireTrail(this.root.position.clone(), prog > 0.65);
+      }
+
+      // Update wingtip ribbons in flaming orange!
+      this.ribbonMat.color.setHex(0xff4411).multiplyScalar(2.4);
+      this.root.updateMatrixWorld(true);
+      const leftTip = new THREE.Vector3(-2.55, 0, 1.25).applyMatrix4(this.shipMesh.matrixWorld);
+      const rightTip = new THREE.Vector3(2.55, 0, 1.25).applyMatrix4(this.shipMesh.matrixWorld);
+      for (let i = this.ribbonPoints - 1; i > 0; i--) {
+        this.leftRibbonHistory[i].copy(this.leftRibbonHistory[i - 1]);
+        this.leftRibbonHistory[i].z += railSpeed * dt * 0.5;
+        this.rightRibbonHistory[i].copy(this.rightRibbonHistory[i - 1]);
+        this.rightRibbonHistory[i].z += railSpeed * dt * 0.5;
+      }
+      this.leftRibbonHistory[0].copy(leftTip);
+      this.rightRibbonHistory[0].copy(rightTip);
+      this.leftRibbonLine.geometry.setFromPoints(this.leftRibbonHistory);
+      this.rightRibbonLine.geometry.setFromPoints(this.rightRibbonHistory);
+
+      if (this.deathTimer >= 1.45) {
+        this.isDetonated = true;
+        this.shipMesh.visible = false;
+        this.leftRibbonLine.visible = false;
+        this.rightRibbonLine.visible = false;
+        this.spawnWreckage();
+        onDetonate(this.root.position.clone());
+        return 'detonated';
+      }
+      return 'spiraling';
+    }
+
+    // Phase B (1.45s -> 2.55s): Physical 3D wreckage chunks tumbling through space!
+    for (const w of this.wreckage) {
+      w.mesh.position.addScaledVector(w.vel, dt);
+      w.vel.y -= 4.5 * dt;
+      w.mesh.rotation.x += w.rotVel.x * dt;
+      w.mesh.rotation.y += w.rotVel.y * dt;
+      w.mesh.rotation.z += w.rotVel.z * dt;
+      if (Math.random() < 0.45) {
+        onFireTrail(w.mesh.position.clone(), false);
+      }
+    }
+
+    if (this.deathTimer >= 2.55) {
+      return 'done';
+    }
+    return 'detonated';
+  }
+
+  public updateVictoryFlyby(dt: number, railSpeed: number, elapsed: number): void {
+    this.position.x = THREE.MathUtils.lerp(this.position.x, Math.sin(elapsed * 1.4) * 3.0, dt * 2.5);
+    this.position.y = THREE.MathUtils.lerp(this.position.y, 1.2 + Math.cos(elapsed * 1.8) * 0.9, dt * 2.5);
+    this.root.position.set(this.position.x, this.position.y, 0);
+
+    // Celebratory victory barrel-roll right after the boss explodes!
+    const rollP = Math.min(1, Math.max(0, (elapsed - 1.55) / 0.72));
+    const celebRoll = rollP > 0 && rollP < 1 ? rollP * Math.PI * 2 : 0;
+    this.shipMesh.rotation.set(0.08, 0, -Math.cos(elapsed * 1.4) * 0.28 + celebRoll);
+    this.thrusterGlowLeft.scale.set(1.25, 1.25, 2.5 + Math.sin(elapsed * 32) * 0.3);
+    this.thrusterGlowRight.scale.set(1.25, 1.25, 2.5 + Math.sin(elapsed * 32) * 0.3);
+    this.setAccentState(true, false);
+
+    this.root.updateMatrixWorld(true);
+    const leftTip = new THREE.Vector3(-2.55, 0, 1.25).applyMatrix4(this.shipMesh.matrixWorld);
+    const rightTip = new THREE.Vector3(2.55, 0, 1.25).applyMatrix4(this.shipMesh.matrixWorld);
+    for (let i = this.ribbonPoints - 1; i > 0; i--) {
+      this.leftRibbonHistory[i].copy(this.leftRibbonHistory[i - 1]);
+      this.leftRibbonHistory[i].z += railSpeed * dt * 0.8;
+      this.rightRibbonHistory[i].copy(this.rightRibbonHistory[i - 1]);
+      this.rightRibbonHistory[i].z += railSpeed * dt * 0.8;
+    }
+    this.leftRibbonHistory[0].copy(leftTip);
+    this.rightRibbonHistory[0].copy(rightTip);
+    this.leftRibbonLine.geometry.setFromPoints(this.leftRibbonHistory);
+    this.rightRibbonLine.geometry.setFromPoints(this.rightRibbonHistory);
+  }
+
   public triggerBarrelRoll(dir: -1 | 1): boolean {
     if (this.barrelRollTimer > 0 || this.somersaultTimer > 0 || this.barrelRollCooldown > 0) return false;
     this.barrelRollTimer = this.barrelRollDuration;
     this.barrelRollDir = dir;
-    this.barrelRollCooldown = 0.22;
+    this.barrelRollCooldown = 0.36;
     return true;
   }
 
   public triggerSomersault(): boolean {
-    if (this.somersaultTimer > 0 || this.barrelRollTimer > 0 || this.somersaultCooldown > 0 || this.boostMeter < 25) {
+    if (this.somersaultTimer > 0 || this.barrelRollTimer > 0 || this.somersaultCooldown > 0 || this.boostMeter < 30) {
       return false;
     }
     this.somersaultTimer = this.somersaultDuration;
-    this.somersaultCooldown = 1.6;
-    this.boostMeter = Math.max(0, this.boostMeter - 25);
+    this.somersaultCooldown = 2.0;
+    this.boostMeter = Math.max(0, this.boostMeter - 30);
     return true;
   }
 
@@ -309,7 +521,7 @@ export class PlayerShip {
   public takeDamage(amount: number): boolean {
     if (this.isInvulnerable) return false;
     this.shield = Math.max(0, this.shield - amount);
-    this.hitInvulnTimer = 0.75;
+    this.hitInvulnTimer = 0.72;
     this.damageFlashTimer = 0.25;
     this.timeSinceDamage = 0;
     return true;
@@ -408,6 +620,7 @@ export class PlayerShip {
     this.yaw += (targetYaw - this.yaw) * Math.min(1, 10 * dt);
 
     this.root.position.copy(this.position);
+    this.root.position.z += this.entryZOffset;
 
     let extraRoll = 0;
     let extraPitch = 0;
