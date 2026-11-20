@@ -216,256 +216,343 @@ timeline:
     scale: 1.2
     rotationSpeed: 0.0
 
-  # ==================== ACT 2: TURBO GATE CHAINS & FIRST 360° NEON LOOP ====================
-  - atDistance: 3640
+  # ==================== ACT 2: TURBO CHAIN EXPRESS, 360° LOOP & CANYON BRAWL ====================
+  - atDistance: 3580
     type: "banner"
-    text: "DEEP CANYON // TURBO GATE CHAIN AHEAD!"
+    text: "DEEP CANYON // TURBO CHAIN EXPRESS!"
 
-  - atDistance: 3780
+  - atDistance: 3680
     type: "obstacle"
     kind: "slalom_gate"
     position: { x: -4.5, y: 1.0 }
     scale: 1.15
     rotationSpeed: 0.0
 
-  - atDistance: 3940
-    type: "obstacle"
-    kind: "slalom_gate"
-    position: { x: 4.5, y: -0.5 }
-    scale: 1.15
-    rotationSpeed: 0.0
-
-  - atDistance: 4100
-    type: "obstacle"
-    kind: "slalom_gate"
-    position: { x: 0, y: 1.5 }
-    scale: 1.15
-    rotationSpeed: 0.0
-
-  - atDistance: 4240
-    type: "track_stunt"
-    stunt: "loop"
-    duration: 5.2
-    label: "360° NEON CANYON LOOP // FULL THROTTLE!"
-
-  - atDistance: 4380
-    type: "obstacle"
-    kind: "boost_ring"
-    position: { x: -2.0, y: 1.2 }
-    scale: 1.2
-    rotationSpeed: 0.0
-
-  - atDistance: 4520
+  - atDistance: 3750
     type: "wave"
     enemy: "scout"
-    formation: "spiral"
+    formation: "flanking"
     count: 8
     spawnOffset: { x: 0, y: 0.5 }
     behavior: "swoop_pass"
     fireRate: 1.0
 
-  - atDistance: 4680
-    type: "obstacle"
-    kind: "boost_ring"
-    position: { x: 2.0, y: -0.8 }
-    scale: 1.2
-    rotationSpeed: 0.0
-
-  - atDistance: 4860
-    type: "obstacle"
-    kind: "weapon_crate"
-    position: { x: 0, y: 0.5 }
-    scale: 1.1
-    rotationSpeed: 1.4
-
-  - atDistance: 5020
-    type: "wave"
-    enemy: "weaver"
-    formation: "flanking"
-    count: 8
-    spawnOffset: { x: 0, y: 0 }
-    behavior: "sine_weave"
-    fireRate: 1.1
-
-  - atDistance: 5220
-    type: "obstacle"
-    kind: "spinner_cross"
-    position: { x: -2.0, y: 0 }
-    scale: 1.1
-    rotationSpeed: 1.15
-
-  - atDistance: 5400
-    type: "obstacle"
-    kind: "spinner_cross"
-    position: { x: 2.0, y: 0 }
-    scale: 1.1
-    rotationSpeed: -1.15
-
-  - atDistance: 5580
-    type: "wave"
-    enemy: "turret"
-    formation: "flanking"
-    count: 5
-    spawnOffset: { x: 0, y: 0.5 }
-    behavior: "hover_fire"
-    fireRate: 1.15
-
-  - atDistance: 5760
-    type: "obstacle"
-    kind: "arch_gate"
-    position: { x: -5.0, y: 0 }
-    scale: 1.05
-    rotationSpeed: 0.0
-
-  - atDistance: 5900
-    type: "track_stunt"
-    stunt: "slalom_wave"
-    duration: 5.5
-    label: "HIGH-G CANYON CHICANE // CHAIN THE GATES!"
-
-  - atDistance: 6040
+  - atDistance: 3810
     type: "obstacle"
     kind: "slalom_gate"
-    position: { x: 5.0, y: 0.5 }
+    position: { x: 4.5, y: -0.6 }
     scale: 1.15
     rotationSpeed: 0.0
 
-  - atDistance: 6220
+  - atDistance: 3940
     type: "obstacle"
     kind: "slalom_gate"
-    position: { x: -5.0, y: -0.8 }
+    position: { x: -2.0, y: 1.4 }
     scale: 1.15
     rotationSpeed: 0.0
 
-  - atDistance: 6400
-    type: "wave"
-    enemy: "interceptor"
-    formation: "v_shape"
-    count: 6
-    spawnOffset: { x: 0, y: 1.2 }
-    behavior: "swoop_pass"
-    fireRate: 1.15
-
-  - atDistance: 6560
-    type: "obstacle"
-    kind: "slalom_gate"
-    position: { x: 4.5, y: 1.0 }
-    scale: 1.15
-    rotationSpeed: 0.0
-
-  - atDistance: 6760
-    type: "obstacle"
-    kind: "debris_field"
-    position: { x: -2.0, y: 0 }
-    scale: 1.2
-    rotationSpeed: 0.9
-
-  - atDistance: 6940
+  - atDistance: 4020
     type: "obstacle"
     kind: "crystal_cluster"
-    position: { x: 2.5, y: -0.5 }
-    scale: 1.45
-    rotationSpeed: -0.6
+    position: { x: 1.5, y: 0 }
+    scale: 1.4
+    rotationSpeed: 0.7
 
-  - atDistance: 7120
+  - atDistance: 4080
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 2.5, y: 0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 4160
+    type: "track_stunt"
+    stunt: "loop"
+    duration: 5.0
+    label: "360° NEON CANYON LOOP // FULL THROTTLE!"
+
+  - atDistance: 4250
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: -2.2, y: 1.2 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 4310
     type: "wave"
     enemy: "weaver"
     formation: "spiral"
     count: 8
-    spawnOffset: { x: 0, y: 0 }
+    spawnOffset: { x: 0, y: 0.4 }
     behavior: "sine_weave"
-    fireRate: 1.15
+    fireRate: 1.05
 
-  - atDistance: 7340
-    type: "obstacle"
-    kind: "laser_bar"
-    position: { x: 0, y: 0.6 }
-    scale: 1.15
-    rotationSpeed: 1.1
-
-  - atDistance: 7500
-    type: "obstacle"
-    kind: "laser_bar"
-    position: { x: 0, y: -0.6 }
-    scale: 1.15
-    rotationSpeed: -1.1
-
-  - atDistance: 7680
+  - atDistance: 4380
     type: "obstacle"
     kind: "boost_ring"
-    position: { x: 0, y: 1.2 }
+    position: { x: 2.2, y: -0.8 }
     scale: 1.2
     rotationSpeed: 0.0
 
-  # ==================== ACT 3: HYPER-PLUNGE, FINAL LOOP & DREADNOUGHT APPROACH ====================
-  - atDistance: 7900
-    type: "banner"
-    text: "CANYON DROP-OFF // BRACE FOR HYPER-PLUNGE!"
-
-  - atDistance: 8060
-    type: "track_stunt"
-    stunt: "dive"
-    duration: 5.0
-    label: "HYPER-PLUNGE // MAXIMUM CANYON VELOCITY!"
-
-  - atDistance: 8220
-    type: "wave"
-    enemy: "scout"
-    formation: "flanking"
-    count: 9
-    spawnOffset: { x: 0, y: 0 }
-    behavior: "swoop_pass"
-    fireRate: 1.1
-
-  - atDistance: 8460
-    type: "obstacle"
-    kind: "monolith_pillar"
-    position: { x: -3.2, y: 0 }
-    scale: 1.2
-    rotationSpeed: 0.0
-
-  - atDistance: 8600
-    type: "obstacle"
-    kind: "monolith_pillar"
-    position: { x: 3.2, y: 0 }
-    scale: 1.2
-    rotationSpeed: 0.0
-
-  - atDistance: 8780
+  - atDistance: 4500
     type: "obstacle"
     kind: "weapon_crate"
-    position: { x: 0, y: 0 }
-    scale: 1.1
+    position: { x: 0, y: 0.5 }
+    scale: 1.15
     rotationSpeed: 1.5
 
-  - atDistance: 8960
+  - atDistance: 4600
+    type: "wave"
+    enemy: "scout"
+    formation: "v_shape"
+    count: 9
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "swoop_pass"
+    fireRate: 1.05
+
+  - atDistance: 4720
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: -2.4, y: 0 }
+    scale: 1.15
+    rotationSpeed: 1.25
+
+  - atDistance: 4840
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 2.4, y: 0 }
+    scale: 1.15
+    rotationSpeed: -1.25
+
+  - atDistance: 4920
     type: "wave"
     enemy: "interceptor"
     formation: "flanking"
     count: 7
     spawnOffset: { x: 0, y: 0.5 }
     behavior: "swoop_pass"
+    fireRate: 1.15
+
+  - atDistance: 5060
+    type: "wave"
+    enemy: "turret"
+    formation: "flanking"
+    count: 5
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "hover_fire"
+    fireRate: 1.15
+
+  - atDistance: 5180
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: -3.0, y: 0.2 }
+    scale: 1.4
+    rotationSpeed: 0.7
+
+  - atDistance: 5250
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 3.0, y: -0.2 }
+    scale: 1.4
+    rotationSpeed: -0.7
+
+  # ==================== CANYON CORKSCREW & ARCH SLALOM ====================
+  - atDistance: 5340
+    type: "track_stunt"
+    stunt: "corkscrew"
+    duration: 5.0
+    label: "360° CANYON CORKSCREW // HOLD ON TIGHT!"
+
+  - atDistance: 5460
+    type: "obstacle"
+    kind: "arch_gate"
+    position: { x: -4.5, y: 0 }
+    scale: 1.05
+    rotationSpeed: 0.0
+
+  - atDistance: 5540
+    type: "wave"
+    enemy: "weaver"
+    formation: "flanking"
+    count: 8
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.1
+
+  - atDistance: 5620
+    type: "obstacle"
+    kind: "arch_gate"
+    position: { x: 4.5, y: 0 }
+    scale: 1.05
+    rotationSpeed: 0.0
+
+  - atDistance: 5750
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: -2.0, y: 1.0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 5860
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 2.0, y: -0.8 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 5940
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 7
+    spawnOffset: { x: 0, y: 1.2 }
+    behavior: "swoop_pass"
+    fireRate: 1.15
+
+  - atDistance: 6080
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0 }
+    scale: 1.15
+    rotationSpeed: 1.2
+
+  # ==================== HIGH-G S-CHICANE 5-GATE TURBO DRIFT ====================
+  - atDistance: 6220
+    type: "track_stunt"
+    stunt: "slalom_wave"
+    duration: 5.5
+    label: "HIGH-G CANYON CHICANE // 5x TURBO CHAIN!"
+
+  - atDistance: 6320
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 5.0, y: 0.6 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6400
+    type: "wave"
+    enemy: "scout"
+    formation: "spiral"
+    count: 9
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.1
+
+  - atDistance: 6460
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -5.0, y: -0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6600
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.8, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6680
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 7
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "swoop_pass"
     fireRate: 1.2
 
-  - atDistance: 9180
+  - atDistance: 6740
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -4.2, y: 0.4 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 6820
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 0, y: -0.3 }
+    scale: 1.45
+    rotationSpeed: -0.8
+
+  - atDistance: 6880
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 3.5, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 7000
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0.2 }
+    scale: 1.15
+    rotationSpeed: 1.5
+
+  # ==================== ROCKSLIDE AMBUSH & X-TURBINE TUNNEL ====================
+  - atDistance: 7120
+    type: "banner"
+    text: "ROCKSLIDE GAUNTLET // SHATTER EVERYTHING!"
+
+  - atDistance: 7200
     type: "obstacle"
     kind: "rogue_asteroid"
     position: { x: -8.5, y: 1.2 }
     scale: 1.35
-    rotationSpeed: 1.0
-    driftX: 5.2
+    rotationSpeed: 1.1
+    driftX: 5.8
     driftY: -0.5
 
-  - atDistance: 9340
+  - atDistance: 7260
+    type: "wave"
+    enemy: "weaver"
+    formation: "spiral"
+    count: 9
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.15
+
+  - atDistance: 7310
     type: "obstacle"
     kind: "rogue_asteroid"
     position: { x: 8.5, y: -1.0 }
     scale: 1.35
-    rotationSpeed: -1.0
-    driftX: -5.2
+    rotationSpeed: -1.1
+    driftX: -5.8
     driftY: 0.4
 
-  - atDistance: 9540
+  - atDistance: 7430
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: -7.5, y: -0.6 }
+    scale: 1.3
+    rotationSpeed: 1.0
+    driftX: 5.4
+    driftY: 0.4
+
+  - atDistance: 7500
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: -2.2, y: 0.5 }
+    scale: 1.45
+    rotationSpeed: 0.8
+
+  - atDistance: 7570
+    type: "obstacle"
+    kind: "crystal_cluster"
+    position: { x: 2.2, y: -0.5 }
+    scale: 1.45
+    rotationSpeed: -0.8
+
+  - atDistance: 7660
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0.6 }
+    scale: 1.15
+    rotationSpeed: 1.25
+
+  - atDistance: 7720
     type: "wave"
     enemy: "turret"
     formation: "line"
@@ -474,83 +561,276 @@ timeline:
     behavior: "hover_fire"
     fireRate: 1.2
 
-  - atDistance: 9760
+  - atDistance: 7790
     type: "obstacle"
-    kind: "slalom_gate"
-    position: { x: -4.0, y: 1.0 }
+    kind: "laser_bar"
+    position: { x: 0, y: -0.6 }
     scale: 1.15
+    rotationSpeed: -1.25
+
+  - atDistance: 7900
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: 0, y: 1.0 }
+    scale: 1.2
     rotationSpeed: 0.0
 
-  - atDistance: 9920
-    type: "obstacle"
-    kind: "slalom_gate"
-    position: { x: 4.0, y: -0.8 }
-    scale: 1.15
-    rotationSpeed: 0.0
-
-  - atDistance: 10080
-    type: "obstacle"
-    kind: "slalom_gate"
-    position: { x: 0, y: 1.2 }
-    scale: 1.15
-    rotationSpeed: 0.0
-
-  - atDistance: 10220
-    type: "track_stunt"
-    stunt: "loop"
-    duration: 5.0
-    label: "FINAL CANYON 360° LOOP // INTERCEPTOR GAUNTLET!"
-
-  - atDistance: 10440
+  - atDistance: 7950
     type: "wave"
     enemy: "interceptor"
     formation: "v_shape"
     count: 7
     spawnOffset: { x: 0, y: 1.0 }
     behavior: "swoop_pass"
-    fireRate: 1.25
+    fireRate: 1.2
 
-  - atDistance: 10720
+  # ==================== ACT 3: HYPER-PLUNGE, DOUBLE AMBUSH & FINAL LOOP ====================
+  - atDistance: 8080
+    type: "track_stunt"
+    stunt: "dive"
+    duration: 4.8
+    label: "HYPER-PLUNGE // MAXIMUM CANYON VELOCITY!"
+
+  - atDistance: 8200
+    type: "wave"
+    enemy: "scout"
+    formation: "flanking"
+    count: 10
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "swoop_pass"
+    fireRate: 1.15
+
+  - atDistance: 8340
     type: "obstacle"
-    kind: "spinner_cross"
+    kind: "boost_ring"
+    position: { x: -3.0, y: 0.8 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 8420
+    type: "obstacle"
+    kind: "monolith_pillar"
+    position: { x: -3.5, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 8500
+    type: "obstacle"
+    kind: "monolith_pillar"
+    position: { x: 3.5, y: 0 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 8580
+    type: "obstacle"
+    kind: "monolith_pillar"
     position: { x: 0, y: 0 }
     scale: 1.2
-    rotationSpeed: 1.35
+    rotationSpeed: 0.0
 
-  - atDistance: 10940
+  - atDistance: 8640
+    type: "wave"
+    enemy: "turret"
+    formation: "flanking"
+    count: 5
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "hover_fire"
+    fireRate: 1.2
+
+  - atDistance: 8760
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 7
+    spawnOffset: { x: 0, y: -0.4 }
+    behavior: "swoop_pass"
+    fireRate: 1.2
+
+  - atDistance: 8920
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0.5 }
+    scale: 1.15
+    rotationSpeed: 1.6
+
+  - atDistance: 9020
+    type: "obstacle"
+    kind: "debris_field"
+    position: { x: -2.0, y: 0 }
+    scale: 1.25
+    rotationSpeed: 1.0
+
+  - atDistance: 9160
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -4.2, y: 1.0 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9290
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 4.2, y: -0.8 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9350
     type: "wave"
     enemy: "weaver"
-    formation: "flanking"
-    count: 8
+    formation: "spiral"
+    count: 9
     spawnOffset: { x: 0, y: 0 }
     behavior: "sine_weave"
     fireRate: 1.2
 
-  - atDistance: 11180
+  - atDistance: 9420
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: -3.2, y: 1.2 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9550
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 3.2, y: 0.4 }
+    scale: 1.15
+    rotationSpeed: 0.0
+
+  - atDistance: 9640
     type: "obstacle"
     kind: "laser_bar"
     position: { x: 0, y: 0 }
     scale: 1.2
-    rotationSpeed: -1.25
+    rotationSpeed: 1.35
 
-  - atDistance: 11400
+  - atDistance: 9740
+    type: "track_stunt"
+    stunt: "loop"
+    duration: 5.0
+    label: "FINAL CANYON 360° LOOP // INTERCEPTOR GAUNTLET!"
+
+  - atDistance: 9880
+    type: "wave"
+    enemy: "interceptor"
+    formation: "v_shape"
+    count: 8
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "swoop_pass"
+    fireRate: 1.25
+
+  - atDistance: 10040
     type: "obstacle"
-    kind: "boost_ring"
-    position: { x: -3.5, y: 0.8 }
+    kind: "rogue_asteroid"
+    position: { x: -8.5, y: 0.8 }
+    scale: 1.35
+    rotationSpeed: 1.1
+    driftX: 6.0
+    driftY: -0.3
+
+  - atDistance: 10140
+    type: "obstacle"
+    kind: "rogue_asteroid"
+    position: { x: 8.5, y: -0.8 }
+    scale: 1.35
+    rotationSpeed: -1.1
+    driftX: -6.0
+    driftY: 0.3
+
+  # ==================== CANYON DEFENSE ARMADA CLIMAX ====================
+  - atDistance: 10280
+    type: "banner"
+    text: "CANYON DEFENSE ARMADA // BLAST THROUGH!"
+
+  - atDistance: 10360
+    type: "obstacle"
+    kind: "weapon_crate"
+    position: { x: 0, y: 0 }
+    scale: 1.15
+    rotationSpeed: 1.6
+
+  - atDistance: 10460
+    type: "wave"
+    enemy: "turret"
+    formation: "line"
+    count: 5
+    spawnOffset: { x: 0, y: -0.4 }
+    behavior: "hover_fire"
+    fireRate: 1.25
+
+  - atDistance: 10580
+    type: "wave"
+    enemy: "scout"
+    formation: "spiral"
+    count: 10
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "swoop_pass"
+    fireRate: 1.2
+
+  - atDistance: 10740
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: -2.2, y: 0 }
+    scale: 1.2
+    rotationSpeed: 1.4
+
+  - atDistance: 10860
+    type: "obstacle"
+    kind: "spinner_cross"
+    position: { x: 2.2, y: 0 }
+    scale: 1.2
+    rotationSpeed: -1.4
+
+  - atDistance: 10960
+    type: "wave"
+    enemy: "weaver"
+    formation: "flanking"
+    count: 9
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "sine_weave"
+    fireRate: 1.25
+
+  - atDistance: 11140
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 8
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "swoop_pass"
+    fireRate: 1.25
+
+  - atDistance: 11320
+    type: "obstacle"
+    kind: "laser_bar"
+    position: { x: 0, y: 0 }
+    scale: 1.2
+    rotationSpeed: -1.45
+
+  - atDistance: 11460
+    type: "obstacle"
+    kind: "slalom_gate"
+    position: { x: 0, y: 0.8 }
     scale: 1.2
     rotationSpeed: 0.0
 
-  - atDistance: 11540
+  - atDistance: 11560
+    type: "obstacle"
+    kind: "boost_ring"
+    position: { x: -3.2, y: 0.6 }
+    scale: 1.2
+    rotationSpeed: 0.0
+
+  - atDistance: 11640
     type: "obstacle"
     kind: "boost_ring"
     position: { x: 0, y: 0 }
     scale: 1.2
     rotationSpeed: 0.0
 
-  - atDistance: 11680
+  - atDistance: 11720
     type: "obstacle"
     kind: "boost_ring"
-    position: { x: 3.5, y: -0.8 }
+    position: { x: 3.2, y: -0.6 }
     scale: 1.2
     rotationSpeed: 0.0
 
