@@ -770,6 +770,9 @@ class BootNAssGame {
       onSpark: (pos, colorHex) => {
         this.particles.burst(pos, 4, colorHex, 9, 0.45, 0.22);
       },
+      onTrail: (pos, colorHex, size) => {
+        this.particles.spawnTrail(pos, colorHex, size, 0.22);
+      },
     };
   }
 
@@ -1110,6 +1113,12 @@ class BootNAssGame {
       this.trackCurve.update(dt, this.timeline ? this.timeline.distance : 0, this.state.currentLevelIndex, false);
       this.env.update(dt, flybySpeed, true, this.trackCurve);
       this.player.updateVictoryFlyby(dt, flybySpeed, this.bossVictoryElapsed);
+      this.squadron.updateVictoryFormation(
+        dt,
+        this.player.root.position,
+        this.bossVictoryElapsed,
+        (pos, colorHex, size) => this.particles.spawnTrail(pos, colorHex, size, 0.25)
+      );
       this.projectiles.update(dt);
       this.particles.update(dt, flybySpeed);
 
@@ -1251,7 +1260,8 @@ class BootNAssGame {
           this.screenShake = Math.max(this.screenShake, 0.45);
           this.particles.spawnShockwave(boomPos, colorHex, 16, 0.48);
           this.particles.burst(boomPos, 18, colorHex, 20, 0.9, 0.45);
-        }
+        },
+        (pos, colorHex, size) => this.particles.spawnTrail(pos, colorHex, size, 0.24)
       );
 
       this.projectiles.update(dt);
@@ -1532,8 +1542,10 @@ class BootNAssGame {
       dt,
       this.player.position,
       this.enemies,
+      this.obstacles,
       this.projectiles,
       this.boss,
+      this.trackCurve,
       diffCfg.damageTakenMult,
       wingmanCb
     );
