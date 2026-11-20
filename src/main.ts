@@ -924,6 +924,9 @@ class StarburstGame {
         this.audio.playBossAlarm();
         this.hud.showBanner("I'MMA PUT BOOT N ASS // LASER SWEEP!", 1.8);
         this.playCategoryBanter('bossBootNAss', 3.4, false, 1.0);
+      },
+      (sparkPos) => {
+        this.particles.burst(sparkPos, 6, 0xffaa22, 14, 0.7, 0.35);
       }
     );
     this.projectiles.update(dt, (pos) => {

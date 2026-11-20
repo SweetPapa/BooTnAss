@@ -245,7 +245,7 @@ export class CollisionSystem {
       }
     }
 
-    // 4. Player vs Boss Sweeping Laser Walls (Horizontal AND Vertical sweeps!)
+    // 4. Player vs Boss Sweeping Laser Walls (Horizontal, Vertical, AND Octa-Core Sentinel Rotating X-Cross!)
     if (boss.active && boss.sweepBeamActive) {
       if (boss.sweepAxis === 'horizontal' && Math.abs(playerPos.y - boss.sweepBeamPos) < 1.55) {
         if (player.takeDamage(20)) {
@@ -254,6 +254,16 @@ export class CollisionSystem {
       } else if (boss.sweepAxis === 'vertical' && Math.abs(playerPos.x - boss.sweepBeamPos) < 1.75) {
         if (player.takeDamage(20)) {
           cb.onPlayerDamaged(20, playerPos, 'beam');
+        }
+      } else if (boss.sweepAxis === 'cross') {
+        const cos = Math.cos(-boss.sweepCrossAngle);
+        const sin = Math.sin(-boss.sweepCrossAngle);
+        const lx = playerPos.x * cos - playerPos.y * sin;
+        const ly = playerPos.x * sin + playerPos.y * cos;
+        if (Math.abs(lx) < 1.45 || Math.abs(ly) < 1.45) {
+          if (player.takeDamage(20)) {
+            cb.onPlayerDamaged(20, playerPos, 'beam');
+          }
         }
       }
     }
