@@ -338,6 +338,11 @@ export class EnemyFactory {
       eye.position.set(0, 0.22, 0.85);
       group.add(eye);
 
+      const jet = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.05, 5), coreGlow);
+      jet.rotation.x = -Math.PI / 2;
+      jet.position.set(0, 0, -1.75);
+      group.add(jet);
+
       return { group, hp: 28, radius: 1.7, scoreValue: 150, speedZ: 29 };
     }
 
@@ -355,6 +360,12 @@ export class EnemyFactory {
       finR.rotation.z = -Math.PI / 2;
       finR.position.set(1.95, 0, 0);
       group.add(finR);
+
+      for (const side of [-1, 1]) {
+        const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), magentaGlow);
+        tip.position.set(side * 3.1, 0, 0);
+        group.add(tip);
+      }
 
       return { group, hp: 44, radius: 2.0, scoreValue: 250, speedZ: 25 };
     }
@@ -507,8 +518,9 @@ export class EnemyFactory {
         bootBody.add(jet, anklePod);
       }
 
+      bootBody.scale.setScalar(1.14);
       group.add(bootBody);
-      return { group, hp: 155, radius: 2.85, scoreValue: 750, speedZ: 24, spinPart: bootBody };
+      return { group, hp: 155, radius: 3.0, scoreValue: 750, speedZ: 24, spinPart: bootBody };
     }
 
     if (kind === 'bomber_saucer') {
@@ -587,6 +599,13 @@ export class EnemyFactory {
     core.position.set(0, 0.3, 0.5);
     group.add(core);
 
+    for (const side of [-1, 1]) {
+      const jet = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.1, 5), coreGlow);
+      jet.rotation.x = -Math.PI / 2;
+      jet.position.set(side * 0.6, 0, -2.0);
+      group.add(jet);
+    }
+
     return { group, hp: 58, radius: 2.1, scoreValue: 400, speedZ: 35 };
   }
 
@@ -657,6 +676,11 @@ export class EnemyFactory {
         // Hilarious rhythmic space-boot stomping kick!
         e.spinPart.rotation.x = Math.sin(e.age * 4.4 + e.phaseOffset) * 0.24;
         e.spinPart.rotation.z = Math.cos(e.age * 2.8 + e.phaseOffset) * 0.18;
+      }
+
+      // Damaged-hull burning sparks when any heavy enemy drops below 45% HP!
+      if (e.maxHp >= 75 && e.hp > 0 && e.hp < e.maxHp * 0.45 && e.mesh.position.z < -10 && Math.random() < 0.22) {
+        cb?.onTailgaterSpark?.(e.mesh.position.clone(), 0xff6611);
       }
 
       const pos = e.mesh.position;

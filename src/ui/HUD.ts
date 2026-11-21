@@ -35,6 +35,12 @@ export interface HudCallbacks {
   onToggleFullscreen: () => void;
   onQuitDesktop: () => void;
   onToggleNintendoLayout: () => void;
+  onToggleInvertY: () => void;
+  onCycleSensitivity: () => void;
+  onCycleDeadzone: () => void;
+  onCycleRumble: () => void;
+  onToggleAutoFire: () => void;
+  onCycleScreenShake: () => void;
   onTestRumble: () => string;
   onUiHover: () => void;
   onUiConfirm: () => void;
@@ -271,6 +277,7 @@ export class HUD {
     this.tutorialTimer = 0;
   }
   private mousePill: HTMLElement | null = null;
+  private autoFirePill: HTMLElement | null = null;
   private mutePill: HTMLElement | null = null;
   private weaponPill: HTMLElement | null = null;
   private bombPill: HTMLElement | null = null;
@@ -630,30 +637,41 @@ export class HUD {
   }
 
   private renderOptionsModal(state: GameState): void {
+    const sensPct = Math.round(state.stickSensitivity * 100);
+    const dzLabel = state.deadzone <= 0.12 ? 'TIGHT (10%)' : state.deadzone >= 0.2 ? 'WIDE (24%)' : 'STANDARD (16%)';
+    const rumbleLabel = state.rumbleScale <= 0 ? 'OFF' : state.rumbleScale < 0.8 ? '50%' : '100%';
+    const shakeLabel = state.screenShakeScale <= 0.6 ? '50%' : '100%';
+
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
         <div class="options-modal-card">
-          <div class="tally-title" style="margin-bottom:4px;">OPTIONS &amp; FLIGHT CONTROLS</div>
+          <div class="tally-title" style="margin-bottom:4px;">OPTIONS &amp; CONTROLLER TUNING</div>
           <div style="color:var(--cyan);font-size:0.85rem;letter-spacing:0.14em;margin-bottom:10px;">SETTINGS SAVE AUTOMATICALLY</div>
 
           <div class="options-grid">
-            <button id="opt-mute" class="neon-btn small secondary">AUDIO: ${state.muted ? 'MUTED' : 'ON'}</button>
-            <button id="opt-mouse" class="neon-btn small secondary">MOUSE AIM: ${state.mouseAimEnabled ? 'ON' : 'OFF'}</button>
-            <button id="opt-fullscreen" class="neon-btn small secondary">TOGGLE FULLSCREEN [F11]</button>
+            <button id="opt-autofire" class="neon-btn small secondary">AUTO-FIRE [T]: ${state.autoFire ? 'ON ★' : 'OFF'}</button>
+            <button id="opt-invert-y" class="neon-btn small secondary">FLIGHT Y-AXIS: ${state.invertY ? 'INVERTED' : 'NORMAL'}</button>
+            <button id="opt-sens" class="neon-btn small secondary">STICK SENSITIVITY: ${sensPct}%</button>
+            <button id="opt-deadzone" class="neon-btn small secondary">STICK DEADZONE: ${dzLabel}</button>
+            <button id="opt-rumble-lvl" class="neon-btn small secondary">RUMBLE POWER: ${rumbleLabel}</button>
+            <button id="opt-shake" class="neon-btn small secondary">SCREEN SHAKE: ${shakeLabel}</button>
             <button id="opt-pad-layout" class="neon-btn small secondary">
               PAD A/B: ${this.nintendoLayout ? 'SWAPPED (EAST=FIRE)' : 'STANDARD (SOUTH=FIRE)'}
             </button>
             <button id="opt-rumble" class="neon-btn small secondary">TEST CONTROLLER RUMBLE</button>
+            <button id="opt-mouse" class="neon-btn small secondary">MOUSE AIM [M]: ${state.mouseAimEnabled ? 'ON' : 'OFF'}</button>
+            <button id="opt-mute" class="neon-btn small secondary">AUDIO [N]: ${state.muted ? 'MUTED' : 'ON'}</button>
+            <button id="opt-fullscreen" class="neon-btn small secondary">TOGGLE FULLSCREEN [F11]</button>
             <button id="opt-reset" class="neon-btn small secondary danger-subtle">RESET SAVE DATA</button>
           </div>
 
-          <div class="pad-status-bar" style="margin-bottom:16px;">
+          <div class="pad-status-bar" style="margin-bottom:14px;">
             <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
             <span id="rumble-feedback" class="rumble-msg"></span>
           </div>
 
-          <div class="controls-grid" style="margin-bottom:20px;">
+          <div class="controls-grid" style="margin-bottom:18px;">
             <div class="control-item"><span class="control-key">WASD / L-STICK</span> Fly &amp; Bank</div>
             <div class="control-item"><span class="control-key">SPACE / RT / A</span> Rapid Plasma</div>
             <div class="control-item"><span class="control-key">SHIFT / LT / B</span> Homing Lock-On</div>
@@ -661,7 +679,7 @@ export class HUD {
             <div class="control-item"><span class="control-key">R / W×2 / Y</span> Somersault Backflip</div>
             <div class="control-item"><span class="control-key">B / X</span> Nova Smart Bomb</div>
             <div class="control-item"><span class="control-key">F / L3</span> Boost &nbsp; <span class="control-key">C / R3 / LB+RB</span> Brake</div>
-            <div class="control-item"><span class="control-key">ESC / START</span> Pause &nbsp; <span class="control-key">F11</span> Fullscreen</div>
+            <div class="control-item"><span class="control-key">T</span> Auto-Fire &nbsp; <span class="control-key">ESC / START</span> Pause</div>
           </div>
 
           <button id="opt-back" class="neon-btn">BACK TO BRIDGE</button>
@@ -669,6 +687,30 @@ export class HUD {
       </div>
     `;
 
+    document.getElementById('opt-autofire')?.addEventListener('click', () => {
+      this.cb.onToggleAutoFire();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-invert-y')?.addEventListener('click', () => {
+      this.cb.onToggleInvertY();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-sens')?.addEventListener('click', () => {
+      this.cb.onCycleSensitivity();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-deadzone')?.addEventListener('click', () => {
+      this.cb.onCycleDeadzone();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-rumble-lvl')?.addEventListener('click', () => {
+      this.cb.onCycleRumble();
+      this.renderOptionsModal(state);
+    });
+    document.getElementById('opt-shake')?.addEventListener('click', () => {
+      this.cb.onCycleScreenShake();
+      this.renderOptionsModal(state);
+    });
     document.getElementById('opt-mute')?.addEventListener('click', () => {
       this.cb.onToggleMute();
       this.renderOptionsModal(state);
@@ -903,6 +945,7 @@ export class HUD {
           <div class="hud-pill active" id="pill-weapon">WPN: TWIN</div>
           <div class="hud-pill active" id="pill-bomb">NOVA [B/X]: 2</div>
           <div class="hud-pill" id="pill-pad" style="display:none;">🎮 PAD READY</div>
+          <button class="hud-pill ${state.autoFire ? 'active' : ''}" id="pill-autofire">AUTO-FIRE [T]</button>
           <button class="hud-pill ${state.mouseAimEnabled ? 'active' : ''}" id="pill-mouse">MOUSE [M]</button>
           <button class="hud-pill ${state.muted ? '' : 'active'}" id="pill-mute">AUDIO [N]</button>
         </div>
@@ -948,12 +991,14 @@ export class HUD {
     this.tailgaterHintEl = document.getElementById('tailgater-hint');
     this.tailgaterHpEl = document.getElementById('tailgater-hp');
     this.popupContainer = document.getElementById('popup-container');
+    this.autoFirePill = document.getElementById('pill-autofire');
     this.mousePill = document.getElementById('pill-mouse');
     this.mutePill = document.getElementById('pill-mute');
     this.weaponPill = document.getElementById('pill-weapon');
     this.bombPill = document.getElementById('pill-bomb');
     this.padPill = document.getElementById('pill-pad');
 
+    this.autoFirePill?.addEventListener('click', () => this.cb.onToggleAutoFire());
     this.mousePill?.addEventListener('click', () => this.cb.onToggleMouseAim());
     this.mutePill?.addEventListener('click', () => this.cb.onToggleMute());
   }
@@ -1002,11 +1047,12 @@ export class HUD {
       }
     }
 
-    // Reticles
+    // Reticles (color-coded gold when Overdrive / Spread / Gatling is active!)
     if (this.reticleNear && this.reticleFar) {
       this.reticleNear.style.left = `${reticle.nearX}px`;
       this.reticleNear.style.top = `${reticle.nearY}px`;
       this.reticleNear.classList.toggle('charging', reticle.charging);
+      this.reticleNear.classList.toggle('overdrive', state.isOverdrive || loadout.weaponMode !== 'twin');
       this.reticleFar.style.left = `${reticle.farX}px`;
       this.reticleFar.style.top = `${reticle.farY}px`;
     }
@@ -1026,6 +1072,7 @@ export class HUD {
     }
 
     // Pills
+    this.autoFirePill?.classList.toggle('active', state.autoFire);
     this.mousePill?.classList.toggle('active', state.mouseAimEnabled);
     this.mutePill?.classList.toggle('active', !state.muted);
     if (this.weaponPill) {
@@ -1124,6 +1171,10 @@ export class HUD {
   public spawnFloatingText(x: number, y: number, text: string, color = '#ffd447'): void {
     if (!this.popupContainer) return;
     if (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight) return;
+    // Cap concurrent popups at 8 so big explosion chains stay crisp and legible!
+    while (this.popupContainer.childElementCount >= 8) {
+      this.popupContainer.firstElementChild?.remove();
+    }
     const el = document.createElement('div');
     el.className = 'float-popup';
     el.style.left = `${x.toFixed(0)}px`;
@@ -1291,6 +1342,8 @@ export class HUD {
         <div class="pause-stack">
           <button id="btn-resume" class="neon-btn">RESUME FLIGHT</button>
           <button id="btn-pause-retry" class="neon-btn secondary">RESTART SECTOR</button>
+          <button id="btn-pause-autofire" class="neon-btn small secondary">AUTO-FIRE [T]: ${state?.autoFire ? 'ON ★' : 'OFF'}</button>
+          <button id="btn-pause-invert" class="neon-btn small secondary">INVERT Y-AXIS: ${state?.invertY ? 'ON' : 'OFF'}</button>
           <button id="btn-pause-fs" class="neon-btn small secondary">TOGGLE FULLSCREEN [F11]</button>
           <button id="btn-pause-mute" class="neon-btn small secondary">AUDIO: ${state?.muted ? 'MUTED' : 'ON'}</button>
           <button id="btn-pause-menu" class="neon-btn secondary">MAIN BRIDGE</button>
@@ -1301,6 +1354,14 @@ export class HUD {
     this.root.appendChild(modal);
     document.getElementById('btn-resume')?.addEventListener('click', () => this.cb.onResume());
     document.getElementById('btn-pause-retry')?.addEventListener('click', () => this.cb.onRetryLevel());
+    document.getElementById('btn-pause-autofire')?.addEventListener('click', () => {
+      this.cb.onToggleAutoFire();
+      this.renderPauseOverlay(state);
+    });
+    document.getElementById('btn-pause-invert')?.addEventListener('click', () => {
+      this.cb.onToggleInvertY();
+      this.renderPauseOverlay(state);
+    });
     document.getElementById('btn-pause-fs')?.addEventListener('click', () => this.cb.onToggleFullscreen());
     document.getElementById('btn-pause-mute')?.addEventListener('click', () => {
       this.cb.onToggleMute();

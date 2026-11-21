@@ -59,6 +59,11 @@ export class PlayerShip {
   private readonly deflectBubble: THREE.Mesh;
   private readonly thrusterGlowLeft: THREE.Mesh;
   private readonly thrusterGlowRight: THREE.Mesh;
+  private readonly muzzleFlashLeft: THREE.Mesh;
+  private readonly muzzleFlashRight: THREE.Mesh;
+  private readonly muzzleMat: THREE.MeshBasicMaterial;
+  private muzzleFlashTimer = 0;
+  private cannonRecoil = 0;
   private readonly shipLight: THREE.PointLight;
   private readonly ribbonMat: THREE.LineBasicMaterial;
 
@@ -203,6 +208,22 @@ export class PlayerShip {
     rc.position.set(1.1, -0.14, 0.15);
     this.shipMesh.add(rc);
 
+    // Crisp glowing twin cannon muzzle flashes when firing!
+    this.muzzleMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0x00f0ff).multiplyScalar(3.2),
+      transparent: true,
+      opacity: 0,
+      toneMapped: false,
+      depthWrite: false,
+    });
+    const muzzleGeo = new THREE.OctahedronGeometry(0.32, 0);
+    muzzleGeo.scale(0.85, 0.85, 2.2);
+    this.muzzleFlashLeft = new THREE.Mesh(muzzleGeo, this.muzzleMat);
+    this.muzzleFlashLeft.position.set(-1.1, -0.14, -0.7);
+    this.muzzleFlashRight = new THREE.Mesh(muzzleGeo, this.muzzleMat);
+    this.muzzleFlashRight.position.set(1.1, -0.14, -0.7);
+    this.shipMesh.add(this.muzzleFlashLeft, this.muzzleFlashRight);
+
     // Barrel-roll energy deflector bubble
     const bubbleGeo = new THREE.IcosahedronGeometry(2.55, 1);
     const bubbleMat = new THREE.MeshBasicMaterial({
@@ -280,7 +301,7 @@ export class PlayerShip {
     this.bankPitch = 0;
     this.yaw = 0;
     this.root.position.copy(this.position);
-    this.root.position.z += this.entryZOffset;
+    this.root.position.z += this.entryZOffset + this.cannonRecoil;
     this.root.visible = true;
     this.shipMesh.visible = true;
     this.leftRibbonLine.visible = true;
@@ -535,6 +556,13 @@ export class PlayerShip {
     this.shield = Math.min(this.maxShield, this.shield + amount);
   }
 
+  public triggerMuzzleFlash(overdrive: boolean): void {
+    this.muzzleFlashTimer = 0.065;
+    this.cannonRecoil = Math.min(0.24, this.cannonRecoil + 0.14);
+    const hex = overdrive ? 0xffd447 : 0x00f0ff;
+    this.muzzleMat.color.setHex(hex).multiplyScalar(3.2);
+  }
+
   public update(
     dt: number,
     input: InputState,
@@ -615,6 +643,19 @@ export class PlayerShip {
     if (this.hitInvulnTimer > 0) this.hitInvulnTimer -= dt;
     if (this.damageFlashTimer > 0) this.damageFlashTimer -= dt;
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
+    if (this.muzzleFlashTimer > 0) {
+      this.muzzleFlashTimer = Math.max(0, this.muzzleFlashTimer - dt);
+      const t = this.muzzleFlashTimer / 0.065;
+      this.muzzleMat.opacity = t * 0.92;
+      const sc = 0.7 + t * 0.75;
+      this.muzzleFlashLeft.scale.set(sc, sc, sc);
+      this.muzzleFlashRight.scale.set(sc, sc, sc);
+      this.muzzleFlashLeft.rotation.z += dt * 38;
+      this.muzzleFlashRight.rotation.z -= dt * 38;
+    } else {
+      this.muzzleMat.opacity = 0;
+    }
+    this.cannonRecoil = Math.max(0, this.cannonRecoil - dt * 1.4);
 
     const targetRoll = -this.velocity.x * 0.028;
     const targetPitch = this.velocity.y * 0.022;
@@ -624,7 +665,7 @@ export class PlayerShip {
     this.yaw += (targetYaw - this.yaw) * Math.min(1, 10 * dt);
 
     this.root.position.copy(this.position);
-    this.root.position.z += this.entryZOffset;
+    this.root.position.z += this.entryZOffset + this.cannonRecoil;
 
     let extraRoll = 0;
     let extraPitch = 0;

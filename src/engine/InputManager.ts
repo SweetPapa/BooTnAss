@@ -49,6 +49,10 @@ export class InputManager {
   public gamepadName = '';
   public gamepadProfile: ControllerProfile = 'generic';
   public nintendoFaceLayout = false; // Auto-set for Nintendo/8BitDo Switch layout, toggleable by user
+  public invertY = false;
+  public stickSensitivity = 1.0;
+  public deadzone = 0.16;
+  public rumbleScale = 1.0;
   private userOverrodeLayout = false;
 
   // Double-tap A/D detection
@@ -125,6 +129,7 @@ export class InputManager {
    * AND Safari/Firefox (`hapticActuators`). Returns true if an actuator was triggered.
    */
   public rumble(strong = 0.6, weak = 0.4, durationMs = 150): boolean {
+    if (this.rumbleScale <= 0) return false;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let fired = false;
     for (const pad of pads) {
@@ -147,8 +152,8 @@ export class InputManager {
         }>;
       };
 
-      const s = Math.min(1, Math.max(0, strong));
-      const w = Math.min(1, Math.max(0, weak));
+      const s = Math.min(1, Math.max(0, strong * this.rumbleScale));
+      const w = Math.min(1, Math.max(0, weak * this.rumbleScale));
 
       if (anyPad.vibrationActuator && typeof anyPad.vibrationActuator.playEffect === 'function') {
         const effectType = anyPad.vibrationActuator.type === 'trigger-rumble' ? 'trigger-rumble' : 'dual-rumble';
@@ -336,14 +341,22 @@ export class InputManager {
 
     const pad = this.getActiveGamepad();
     if (pad) {
-      const deadzone = 0.16;
+      const dz = this.deadzone;
       const ax0 = pad.axes[0] ?? 0;
       const ax1 = pad.axes[1] ?? 0;
       const ax2 = pad.axes[2] ?? 0;
       const ax3 = pad.axes[3] ?? 0;
 
-      const gx = Math.abs(ax0) > deadzone ? ax0 : 0;
-      const gy = Math.abs(ax1) > deadzone ? -ax1 : 0;
+      // Smooth radial deadzone rescaling + quadratic precision curve for silky stick feel!
+      const mag = Math.hypot(ax0, ax1);
+      let gx = 0;
+      let gy = 0;
+      if (mag > dz) {
+        const rescaled = Math.min(1, ((mag - dz) / Math.max(0.1, 1 - dz)) * this.stickSensitivity);
+        const curved = rescaled * (0.65 + 0.35 * rescaled);
+        gx = (ax0 / mag) * curved;
+        gy = (-ax1 / mag) * curved;
+      }
 
       // Standard D-pad buttons (12..15) OR macOS 8BitDo/D-Input POV Hat (axes[9])
       let dX = (pad.buttons[15]?.pressed ? 1 : 0) - (pad.buttons[14]?.pressed ? 1 : 0);
@@ -362,8 +375,8 @@ export class InputManager {
 
       // Right stick fine reticle aim (if controller has dual sticks)
       if (pad.axes.length >= 4) {
-        if (Math.abs(ax2) > deadzone) aimStickX = ax2;
-        if (Math.abs(ax3) > deadzone) aimStickY = -ax3;
+        if (Math.abs(ax2) > dz) aimStickX = ax2;
+        if (Math.abs(ax3) > dz) aimStickY = -ax3;
       }
 
       const btn = (idx: number) =>
@@ -440,12 +453,14 @@ export class InputManager {
       moveY /= len;
     }
 
+    const flightMoveY = this.invertY ? -moveY : moveY;
+
     const chargeReleased = this.prevCharge && !chargeLock;
     this.prevCharge = chargeLock;
 
     return {
       moveX,
-      moveY,
+      moveY: flightMoveY,
       aimStickX,
       aimStickY,
       fire,

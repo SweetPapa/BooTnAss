@@ -494,16 +494,57 @@ export class AudioSynth {
     }
   }
 
-  public playLaser(overdrive = false): void {
+  public playLaser(overdrive = false, mode: 'twin' | 'spread' | 'gatling' = 'twin'): void {
     if (!this.ctx || !this.masterGain || this.muted) return;
     const now = this.ctx.currentTime;
+    const jitter = 0.97 + Math.random() * 0.06;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
+
+    if (mode === 'gatling') {
+      // Punchy rapid-fire kinetic neon autocannon!
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(780 * jitter, now);
+      osc.frequency.exponentialRampToValueAtTime(165, now + 0.055);
+      g.gain.setValueAtTime(0.11, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+      osc.connect(g);
+      g.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.065);
+      return;
+    }
+
+    if (mode === 'spread') {
+      // Wide rich harmonic 5-way spread pulse!
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(1180 * jitter, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.105);
+      g.gain.setValueAtTime(0.14, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+      const sub = this.ctx.createOscillator();
+      const sg = this.ctx.createGain();
+      sub.type = 'triangle';
+      sub.frequency.setValueAtTime(590 * jitter, now);
+      sub.frequency.exponentialRampToValueAtTime(140, now + 0.1);
+      sg.gain.setValueAtTime(0.11, now);
+      sg.gain.exponentialRampToValueAtTime(0.001, now + 0.105);
+      osc.connect(g);
+      sub.connect(sg);
+      g.connect(this.masterGain);
+      sg.connect(this.masterGain);
+      osc.start(now);
+      sub.start(now);
+      osc.stop(now + 0.115);
+      sub.stop(now + 0.11);
+      return;
+    }
+
     osc.type = overdrive ? 'sawtooth' : 'square';
-    osc.frequency.setValueAtTime(overdrive ? 1280 : 980, now);
+    osc.frequency.setValueAtTime((overdrive ? 1280 : 980) * jitter, now);
     osc.frequency.exponentialRampToValueAtTime(overdrive ? 260 : 210, now + 0.085);
 
-    g.gain.setValueAtTime(overdrive ? 0.15 : 0.11, now);
+    g.gain.setValueAtTime(overdrive ? 0.14 : 0.105, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
 
     osc.connect(g);
@@ -587,55 +628,130 @@ export class AudioSynth {
     osc2.stop(now + 0.19);
   }
 
-  public playHitTick(): void {
+  public playHitTick(combo = 1): void {
     if (!this.ctx || !this.masterGain || this.muted) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(520, now);
-    osc.frequency.exponentialRampToValueAtTime(180, now + 0.04);
-    g.gain.setValueAtTime(0.09, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    const pitchBoost = 1 + Math.min(12, Math.max(0, combo - 1)) * 0.032;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(560 * pitchBoost, now);
+    osc.frequency.exponentialRampToValueAtTime(210 * pitchBoost, now + 0.042);
+    g.gain.setValueAtTime(0.11, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.048);
     osc.connect(g);
     g.connect(this.masterGain);
     osc.start(now);
-    osc.stop(now + 0.05);
+    osc.stop(now + 0.052);
   }
 
-  public playExplosion(large = false): void {
+  public playCrystalShatter(): void {
     if (!this.ctx || !this.masterGain || this.muted) return;
     const now = this.ctx.currentTime;
-    const dur = large ? 0.65 : 0.28;
+    [1318.5, 1760, 2349.3].forEach((freq, i) => {
+      if (!this.ctx || !this.masterGain) return;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.025);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.18, now + i * 0.025 + 0.16);
+      g.gain.setValueAtTime(0.13, now + i * 0.025);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.025 + 0.18);
+      osc.connect(g);
+      g.connect(this.masterGain);
+      osc.start(now + i * 0.025);
+      osc.stop(now + i * 0.025 + 0.2);
+    });
+  }
+
+  public playAirbrake(): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(340, now);
+    osc.frequency.exponentialRampToValueAtTime(95, now + 0.22);
+    g.gain.setValueAtTime(0.15, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    osc.connect(g);
+    g.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  public playMultiKillStinger(tier: number): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const chords: number[][] = [
+      [523.25, 659.25, 783.99],
+      [587.33, 739.99, 880, 1174.66],
+      [659.25, 830.61, 987.77, 1318.5],
+      [523.25, 659.25, 783.99, 1046.5, 1567.98],
+    ];
+    const notes = chords[Math.min(chords.length - 1, Math.max(0, tier))];
+    notes.forEach((f, i) => {
+      if (!this.ctx || !this.masterGain) return;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i * 0.038);
+      g.gain.setValueAtTime(0.14, now + i * 0.038);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.038 + 0.28);
+      osc.connect(g);
+      g.connect(this.masterGain);
+      osc.start(now + i * 0.038);
+      osc.stop(now + i * 0.038 + 0.3);
+    });
+  }
+
+  public playExplosion(large = false, combo = 1): void {
+    if (!this.ctx || !this.masterGain || this.muted) return;
+    const now = this.ctx.currentTime;
+    const dur = large ? 0.7 : 0.32;
+    const harmonic = 1 + Math.min(12, Math.max(0, combo - 1)) * 0.025;
 
     // Sub-bass boom
     const sub = this.ctx.createOscillator();
     const sg = this.ctx.createGain();
     sub.type = 'sine';
-    sub.frequency.setValueAtTime(large ? 115 : 150, now);
-    sub.frequency.exponentialRampToValueAtTime(26, now + dur);
-    sg.gain.setValueAtTime(large ? 0.55 : 0.34, now);
+    sub.frequency.setValueAtTime((large ? 122 : 160) * harmonic, now);
+    sub.frequency.exponentialRampToValueAtTime(24, now + dur);
+    sg.gain.setValueAtTime(large ? 0.58 : 0.36, now);
     sg.gain.exponentialRampToValueAtTime(0.001, now + dur);
     sub.connect(sg);
     sg.connect(this.masterGain);
     sub.start(now);
     sub.stop(now + dur + 0.02);
 
+    // Punchy arcade mid-snap pop so every enemy kill feels crisp & explosive!
+    const snap = this.ctx.createOscillator();
+    const snapG = this.ctx.createGain();
+    snap.type = 'triangle';
+    snap.frequency.setValueAtTime((large ? 420 : 540) * harmonic, now);
+    snap.frequency.exponentialRampToValueAtTime(75, now + 0.14);
+    snapG.gain.setValueAtTime(large ? 0.24 : 0.16, now);
+    snapG.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    snap.connect(snapG);
+    snapG.connect(this.masterGain);
+    snap.start(now);
+    snap.stop(now + 0.16);
+
     // Filtered noise burst
     const bufferSize = Math.floor(this.ctx.sampleRate * dur);
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 1.4);
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 1.35);
     }
     const noise = this.ctx.createBufferSource();
     noise.buffer = buffer;
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(large ? 1600 : 1200, now);
+    filter.frequency.setValueAtTime(large ? 1900 : 1450, now);
     filter.frequency.exponentialRampToValueAtTime(140, now + dur);
     const ng = this.ctx.createGain();
-    ng.gain.setValueAtTime(large ? 0.36 : 0.22, now);
+    ng.gain.setValueAtTime(large ? 0.38 : 0.24, now);
     ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
 
     noise.connect(filter);
@@ -941,6 +1057,38 @@ export class AudioSynth {
       this.voPlaying = false;
       this.updateBgmDucking();
       return false;
+    }
+  }
+
+  private lastAnnouncerAt = 0;
+
+  /**
+   * Plays short punchy arcade announcer stingers ("TRIPLE KILL!", "MEGA KILL!") cleanly without interrupting story dialogue.
+   */
+  public async playAnnouncerStinger(id: string): Promise<void> {
+    if (this.muted) return;
+    const now = performance.now();
+    if (now - this.lastAnnouncerAt < 1800) return;
+    this.lastAnnouncerAt = now;
+    this.unlock();
+    if (!this.ctx || !this.masterGain) return;
+    try {
+      let buffer = this.voCache.get(id);
+      if (!buffer) {
+        const res = await fetch(`/assets/vo/${id}.mp3`);
+        if (!res.ok) return;
+        buffer = await this.ctx.decodeAudioData(await res.arrayBuffer());
+        this.voCache.set(id, buffer);
+      }
+      const src = this.ctx.createBufferSource();
+      src.buffer = buffer;
+      const g = this.ctx.createGain();
+      g.gain.value = 1.45;
+      src.connect(g);
+      g.connect(this.masterGain);
+      src.start();
+    } catch {
+      // non-fatal
     }
   }
 

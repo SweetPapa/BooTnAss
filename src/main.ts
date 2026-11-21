@@ -200,6 +200,24 @@ const BANTER: Record<string, BanterLine[]> = {
   enemyCentipede: [
     { voId: 'enemy-centipede-1', speaker: 'wingman', text: "Ewww! Cyber-centipede slithering across the canyon! Blast that wiggly metal nightmare!" },
   ],
+  enemySaucer: [
+    { voId: 'enemy-saucer-1', speaker: 'wingman', text: "Whoa, disco flying saucer! Barrel-roll their lasers right back into their dome!" },
+  ],
+  stuntLoop: [
+    { voId: 'stunt-loop-1', speaker: 'blitz', text: "Woooohooo! Full three-sixty loop! Hold onto your space tacos!" },
+  ],
+  stuntCorkscrew: [
+    { voId: 'stunt-corkscrew-1', speaker: 'wingman', text: "Gravity corkscrew engaged! Pure neon arcade magic—punch it!" },
+  ],
+  turboChain: [
+    { voId: 'turbo-chain-1', speaker: 'commander', text: "Massive turbo chain! We are officially breaking the speed of fun!" },
+  ],
+  bossRetry: [
+    { voId: 'boss-retry-1', speaker: 'commander', text: "Alright, round two! Show that oversized space toaster who runs this galaxy!" },
+  ],
+  weaponPickup: [
+    { voId: 'weapon-pickup-1', speaker: 'mechanic', text: "Oh baby! Firepower maxed out—light 'em up like the Fourth of July!" },
+  ],
 };
 
 class BootNAssGame {
@@ -411,6 +429,8 @@ class BootNAssGame {
       },
       onToggleNintendoLayout: () => {
         this.input.setNintendoLayout(!this.input.nintendoFaceLayout);
+        this.state.nintendoLayoutPref = this.input.nintendoFaceLayout;
+        this.state.saveSettings();
         this.hud.setControllerInfo(
           this.input.gamepadConnected,
           this.input.gamepadProfile,
@@ -421,9 +441,53 @@ class BootNAssGame {
           this.hud.renderPhase('Title', this.state, this.levels);
         }
       },
+      onToggleInvertY: () => {
+        this.state.invertY = !this.state.invertY;
+        this.state.saveSettings();
+        this.syncInputSettings();
+      },
+      onCycleSensitivity: () => {
+        const steps = [0.75, 1.0, 1.25, 1.5];
+        const idx = steps.findIndex((v) => Math.abs(v - this.state.stickSensitivity) < 0.05);
+        this.state.stickSensitivity = steps[(idx + 1) % steps.length];
+        this.state.saveSettings();
+        this.syncInputSettings();
+      },
+      onCycleDeadzone: () => {
+        const steps = [0.1, 0.16, 0.24];
+        const idx = steps.findIndex((v) => Math.abs(v - this.state.deadzone) < 0.02);
+        this.state.deadzone = steps[(idx + 1) % steps.length];
+        this.state.saveSettings();
+        this.syncInputSettings();
+      },
+      onCycleRumble: () => {
+        const steps = [1.0, 0.5, 0.0];
+        const idx = steps.findIndex((v) => Math.abs(v - this.state.rumbleScale) < 0.1);
+        this.state.rumbleScale = steps[(idx + 1) % steps.length];
+        this.state.saveSettings();
+        this.syncInputSettings();
+        if (this.state.rumbleScale > 0) this.input.rumble(0.7, 0.5, 140);
+      },
+      onToggleAutoFire: () => {
+        this.state.autoFire = !this.state.autoFire;
+        this.state.saveSettings();
+        if (this.state.phase === 'Playing') {
+          this.hud.showBanner(
+            this.state.autoFire ? 'AUTO-FIRE ENGAGED // ENJOY THE FIREWORKS!' : 'AUTO-FIRE OFF // MANUAL TRIGGER',
+            1.6
+          );
+        }
+      },
+      onCycleScreenShake: () => {
+        this.state.screenShakeScale = this.state.screenShakeScale > 0.75 ? 0.5 : 1.0;
+        this.state.saveSettings();
+      },
       onTestRumble: () => {
         if (!this.input.gamepadConnected) {
           return 'PRESS A BUTTON ON YOUR PAD FIRST!';
+        }
+        if (this.state.rumbleScale <= 0) {
+          return 'RUMBLE IS SET TO OFF — TOGGLE RUMBLE POWER ABOVE!';
         }
         const ok = this.input.rumble(0.9, 0.7, 280);
         return ok
@@ -484,13 +548,31 @@ class BootNAssGame {
           this.state.muted = !this.state.muted;
           this.state.saveSettings();
           this.audio.setMuted(this.state.muted);
+        } else if (e.code === 'KeyT') {
+          this.state.autoFire = !this.state.autoFire;
+          this.state.saveSettings();
+          this.hud.showBanner(
+            this.state.autoFire ? 'AUTO-FIRE ENGAGED // ENJOY THE FIREWORKS!' : 'AUTO-FIRE OFF // MANUAL TRIGGER',
+            1.6
+          );
         }
       }
     });
 
     this.audio.setMuted(this.state.muted);
+    this.syncInputSettings();
     this.hud.setMetaProgression(this.meta);
     void this.boot();
+  }
+
+  private syncInputSettings(): void {
+    this.input.invertY = this.state.invertY;
+    this.input.stickSensitivity = this.state.stickSensitivity;
+    this.input.deadzone = this.state.deadzone;
+    this.input.rumbleScale = this.state.rumbleScale;
+    if (this.state.nintendoLayoutPref !== null) {
+      this.input.setNintendoLayout(this.state.nintendoLayoutPref);
+    }
   }
 
   private playCutsceneThen(videoId: string, onDone: () => void, fallbackUrl?: string): void {
@@ -746,6 +828,7 @@ class BootNAssGame {
       this.hud.showBanner('BOSS CHECKPOINT // ROUND TWO!', 2.4);
       this.hud.showArcadeStamp('ROUND TWO // ENGAGE!', 'warp');
       this.audio.playMusicTrack('boss-battle', true, 0.44, 0.78);
+      this.playCategoryBanter('bossRetry', 3.6, true);
     } else {
       this.hud.showBanner(level.name, 2.8);
       this.hud.showArcadeStamp(`HYPER-WARP // ${level.name}`, 'warp');
@@ -849,6 +932,8 @@ class BootNAssGame {
     this.input.rumble(1.0, 0.8, 350);
     this.screenShake = 1.4;
     this.hitstopTimer = 0.06;
+    this.renderer.pulseBloom(0.4);
+    this.particles.flashLight(this.player.position, 0x00f0ff, 50, 0.42);
     this.hud.triggerScreenFlash('nova');
     this.hud.showArcadeStamp('NOVA DETONATION!!', 'kill');
     this.playCategoryBanter('novaBomb', 3.4, true);
@@ -873,7 +958,7 @@ class BootNAssGame {
           this.state.registerKill(e.scoreValue);
           this.registerMultiKill();
           this.squadron.notifyPlayerKilledEnemy(e, wingCb);
-          this.particles.burst(e.mesh.position, 22, 0xffd447, 24, 1.2, 0.65);
+          this.particles.spawnArcadeExplosion(e.mesh.position, 'medium', 0x00f0ff, 0xffd447);
         }
       }
     }
@@ -893,19 +978,31 @@ class BootNAssGame {
 
   private registerMultiKill(): void {
     this.multiKillCount += 1;
-    this.multiKillWindow = 1.25;
+    this.multiKillWindow = 1.35;
     if (this.multiKillCount === 3) {
       this.state.addBonusScore(300);
       this.hud.showArcadeStamp('TRIPLE KILL! +300', 'kill');
+      this.audio.playMultiKillStinger(0);
+      void this.audio.playAnnouncerStinger('announcer-triple');
+      this.renderer.pulseBloom(0.18);
     } else if (this.multiKillCount === 4) {
       this.state.addBonusScore(500);
       this.hud.showArcadeStamp('QUAD KILL!! +500', 'kill');
+      this.audio.playMultiKillStinger(1);
+      void this.audio.playAnnouncerStinger('announcer-quad');
+      this.renderer.pulseBloom(0.24);
     } else if (this.multiKillCount === 5) {
       this.state.addBonusScore(800);
       this.hud.showArcadeStamp('MEGA KILL!! +800', 'kill');
+      this.audio.playMultiKillStinger(2);
+      void this.audio.playAnnouncerStinger('announcer-mega');
+      this.renderer.pulseBloom(0.3);
     } else if (this.multiKillCount === 7) {
       this.state.addBonusScore(1500);
       this.hud.showArcadeStamp('BOOT N ASS RAMPAGE!!!', 'kill');
+      this.audio.playMultiKillStinger(3);
+      void this.audio.playAnnouncerStinger('announcer-rampage');
+      this.renderer.pulseBloom(0.38);
     }
   }
 
@@ -1100,6 +1197,7 @@ class BootNAssGame {
       this.env.update(dt, slowSpeed, false, this.trackCurve);
       this.projectiles.update(dt);
       this.particles.update(dt, slowSpeed);
+      this.renderer.updateEffects(dt);
 
       const phase = this.player.updateDeathSequence(
         dt,
@@ -1117,13 +1215,16 @@ class BootNAssGame {
           this.audio.playShipDetonate();
           this.input.rumble(1.0, 1.0, 520);
           this.screenShake = 2.2;
+          this.renderer.pulseBloom(0.42);
           this.hud.triggerScreenFlash('death');
           this.hud.showArcadeStamp('SHIP DESTROYED // EJECTING!', 'death');
-          this.particles.burst(boomPos, 70, 0xff4400, 34, 1.75, 1.15);
-          this.particles.burst(boomPos, 45, 0xffd447, 28, 1.35, 0.95);
-          this.particles.burst(boomPos, 28, 0x00f0ff, 26, 1.1, 0.8);
+          this.particles.spawnFireball(boomPos, 0xff5500, 6.5, 0.42);
+          this.particles.flashLight(boomPos, 0xff4400, 55, 0.48);
+          this.particles.burst(boomPos, 70, 0xff4400, 34, 1.75, 1.15, 1.8);
+          this.particles.burst(boomPos, 45, 0xffd447, 28, 1.35, 0.95, 2.1);
+          this.particles.burst(boomPos, 28, 0x00f0ff, 26, 1.1, 0.8, 1.9);
           this.particles.spawnShockwave(boomPos, 0xffffff, 24, 0.48);
-          this.particles.spawnShockwave(boomPos, 0xffaa22, 34, 0.75);
+          this.particles.spawnShockwave(boomPos, 0xffaa22, 34, 0.75, true);
           this.particles.spawnShockwave(boomPos, 0xff2244, 42, 0.95);
         }
       );
@@ -1190,6 +1291,7 @@ class BootNAssGame {
       );
       this.projectiles.update(dt);
       this.particles.update(dt, flybySpeed);
+      this.renderer.updateEffects(dt);
 
       if (Math.random() < 0.85) {
         const pPos = this.player.root.position.clone().add(new THREE.Vector3(0, 0, 2.0));
@@ -1202,23 +1304,30 @@ class BootNAssGame {
           this.audio.playBossChainBoom(intensity);
           this.input.rumble(0.45 + intensity * 0.4, 0.4 + intensity * 0.4, 110);
           this.screenShake = Math.max(this.screenShake, 0.65 + intensity * 0.65);
-          this.particles.burst(boomPos, 24, 0xff5500, 24, 1.4, 0.72);
-          this.particles.burst(boomPos, 14, 0xffd447, 18, 1.1, 0.55);
-          this.particles.spawnShockwave(boomPos, 0xffaa22, 12 + intensity * 12, 0.42);
+          this.renderer.pulseBloom(0.18 + intensity * 0.16);
+          this.particles.spawnFireball(boomPos, 0xffaa22, 3.2 + intensity * 2.5, 0.28);
+          this.particles.flashLight(boomPos, 0xff6600, 34 + intensity * 18, 0.28);
+          this.particles.burst(boomPos, 26, 0xff5500, 26, 1.4, 0.72, 1.8);
+          this.particles.burst(boomPos, 16, 0xffd447, 20, 1.1, 0.55, 2.2);
+          this.particles.spawnShockwave(boomPos, 0xffaa22, 12 + intensity * 12, 0.42, true);
         },
         (finalPos) => {
           // FINAL SUPERNOVA BOSS DETONATION!
           this.audio.playShipDetonate();
           this.input.rumble(1.0, 1.0, 520);
           this.screenShake = 2.1;
+          this.renderer.pulseBloom(0.42);
           this.hud.triggerScreenFlash('white');
           this.hud.showBanner('TARGET OBLITERATED // SECTOR CLEAR!', 2.6);
           this.hud.showArcadeStamp('TARGET OBLITERATED!!', 'clear');
-          this.particles.burst(finalPos, 90, 0xffd447, 42, 2.2, 1.35);
-          this.particles.burst(finalPos, 65, 0x00f0ff, 36, 1.8, 1.15);
-          this.particles.burst(finalPos, 45, 0xff3355, 34, 1.7, 1.05);
+          this.particles.spawnFireball(finalPos, 0xffffff, 9.5, 0.55);
+          this.particles.flashLight(finalPos, 0x00f0ff, 65, 0.6);
+          this.particles.burst(finalPos, 95, 0xffd447, 44, 2.2, 1.35, 1.8);
+          this.particles.burst(finalPos, 70, 0x00f0ff, 38, 1.8, 1.15, 2.1);
+          this.particles.burst(finalPos, 50, 0xff3355, 36, 1.7, 1.05, 1.9);
           this.particles.spawnShockwave(finalPos, 0xffffff, 38, 0.55);
-          this.particles.spawnShockwave(finalPos, 0x00f0ff, 52, 0.92);
+          this.particles.spawnShockwave(finalPos, 0xffd447, 46, 0.72, true);
+          this.particles.spawnShockwave(finalPos, 0x00f0ff, 56, 0.96);
           this.playCategoryBanter('levelClear', 4.2, true);
         }
       );
@@ -1403,13 +1512,17 @@ class BootNAssGame {
     const speedMult = this.turboBoostTimer > 0 ? 1.52 : this.player.isBoosting ? 1.45 : this.player.isBraking ? 0.65 : 1.08;
     const railSpeed = level.baseSpeed * speedMult * this.trackCurve.stuntSpeedMult;
 
-    // 1. Update Player (+ Somersault Backflip & Nova Bomb!)
+    // 1. Update Player (+ Somersault Backflip, Airbrake Whoosh & Nova Bomb!)
+    const wasBraking = this.player.isBraking;
     const { startedBoost, startedRoll, startedSomersault } = this.player.update(
       dt,
       input,
       railSpeed,
       this.state.mouseAimEnabled
     );
+    if (!wasBraking && this.player.isBraking) {
+      this.audio.playAirbrake();
+    }
     if (startedBoost) {
       this.audio.playBoost();
       if (this.activeTutorialPrompt === 'boost') {
@@ -1483,8 +1596,9 @@ class BootNAssGame {
       this.particles.spawnTrail(pPos, isSuperBoost ? 0xffd447 : 0x00f0ff, 0.36, 0.22);
     }
 
-    // 2. Rapid-Fire Plasma (Twin / Overdrive Triple / 5-Way Spread / Hyper Gatling!)
-    if (input.fire && this.player.fireCooldown <= 0) {
+    // 2. Rapid-Fire Plasma (Twin / Overdrive Triple / 5-Way Spread / Hyper Gatling + Auto-Fire [T]!)
+    const fireActive = input.fire || this.state.autoFire;
+    if (fireActive && this.player.fireCooldown <= 0) {
       this.audio.unlock();
       const overdrive = this.state.isOverdrive;
       const mode = this.player.weaponMode;
@@ -1511,7 +1625,8 @@ class BootNAssGame {
           this.state.stats.shotsFired += 1;
         }
       }
-      this.audio.playLaser(overdrive || mode !== 'twin');
+      this.player.triggerMuzzleFlash(overdrive || mode !== 'twin');
+      this.audio.playLaser(overdrive || mode !== 'twin', mode);
     }
 
     // 3. Charge Lock-On Missiles (Hold Shift/LT OR Hold Primary Fire for 1.0s to charge Twin-Boot Homing Missiles!)
@@ -1641,6 +1756,7 @@ class BootNAssGame {
       this.particles.spawnTrail(pos, 0xffd447, 0.42, 0.24);
     });
     this.particles.update(dt, railSpeed);
+    this.renderer.updateEffects(dt);
     this.state.updateComboTimer(dt);
     this.audio.updateMusic(dt);
 
@@ -1654,27 +1770,49 @@ class BootNAssGame {
       {
         onEnemyHit: (_e, pos) => {
           this.state.registerHit();
-          this.audio.playHitTick();
+          this.audio.playHitTick(this.state.stats.combo);
           this.hud.triggerHitMarker();
-          this.particles.burst(pos, 5, 0x00f0ff, 12, 0.6, 0.25);
+          this.particles.burst(pos, 7, this.state.isOverdrive ? 0xffd447 : 0x00f0ff, 15, 0.65, 0.25, 1.8);
         },
         onEnemyKilled: (e, pos) => {
           this.state.registerHit();
           const { points, enteredOverdrive } = this.state.registerKill(e.scoreValue);
           this.registerMultiKill();
           this.squadron.notifyPlayerKilledEnemy(e, wingmanCb);
-          const isBigFoe =
+          const isMegaFoe =
             e.kind === 'boot_ship' ||
             e.kind === 'doom_triangle' ||
             e.kind === 'centipede' ||
             e.kind === 'ace_stalker' ||
             e.kind === 'bomber_saucer';
-          this.audio.playExplosion(isBigFoe);
+          const isMediumFoe = e.kind === 'turret' || e.kind === 'interceptor';
+          this.audio.playExplosion(isMegaFoe || isMediumFoe, this.state.stats.combo);
           this.hud.triggerHitMarker();
-          this.input.rumble(isBigFoe ? 0.55 : 0.22, isBigFoe ? 0.5 : 0.35, isBigFoe ? 140 : 75);
-          this.particles.burst(pos, isBigFoe ? 38 : 24, isBigFoe ? 0xff33aa : 0xff5500, isBigFoe ? 28 : 22, isBigFoe ? 1.4 : 1.15, isBigFoe ? 0.78 : 0.62);
-          this.particles.burst(pos, isBigFoe ? 20 : 10, 0xffd447, 18, 0.95, 0.5);
-          this.particles.spawnShockwave(pos, isBigFoe ? 0xffd447 : 0xff7722, isBigFoe ? 11.5 : 6.5, isBigFoe ? 0.42 : 0.3);
+          this.input.rumble(
+            isMegaFoe ? 0.6 : isMediumFoe ? 0.35 : 0.22,
+            isMegaFoe ? 0.55 : 0.35,
+            isMegaFoe ? 150 : 80
+          );
+
+          // Multi-layered coherent arcade fireworks + dynamic 3D blast lighting!
+          const primaryBlast =
+            e.kind === 'centipede'
+              ? 0x33ff66
+              : e.kind === 'ace_stalker'
+                ? 0xff22cc
+                : e.kind === 'bomber_saucer'
+                  ? 0x00f0ff
+                  : 0xff5500;
+          const secondaryBlast = e.kind === 'doom_triangle' || e.kind === 'boot_ship' ? 0xffd447 : 0xffaa22;
+          this.particles.spawnArcadeExplosion(
+            pos,
+            isMegaFoe ? 'mega' : isMediumFoe ? 'medium' : 'small',
+            primaryBlast,
+            secondaryBlast
+          );
+          if (isMegaFoe) this.renderer.pulseBloom(0.28);
+          else if (isMediumFoe) this.renderer.pulseBloom(0.14);
+
           const sp = this.projectToScreen(pos);
 
           if (e.behavior === 'tail_stalker') {
@@ -1695,12 +1833,15 @@ class BootNAssGame {
             this.hud.spawnFloatingText(sp.x, sp.y, `DOOM SHATTERED! +${points.toLocaleString()}`, '#ffd447');
           } else if (e.kind === 'centipede') {
             this.hud.spawnFloatingText(sp.x, sp.y, `BUG SQUASHED! +${points.toLocaleString()}`, '#33ff88');
+          } else if (e.kind === 'bomber_saucer') {
+            this.hud.spawnFloatingText(sp.x, sp.y, `DISCO POPPED! +${points.toLocaleString()}`, '#00f0ff');
           } else {
             this.hud.spawnFloatingText(sp.x, sp.y, `+${points.toLocaleString()}`, this.state.isOverdrive ? '#ffd447' : '#00f0ff');
           }
 
-          this.screenShake = Math.max(this.screenShake, isBigFoe ? 0.52 : 0.28);
+          this.screenShake = Math.max(this.screenShake, isMegaFoe ? 0.56 : isMediumFoe ? 0.36 : 0.26);
           if (enteredOverdrive) {
+            this.renderer.pulseBloom(0.32);
             this.hud.showBanner('10x OVERDRIVE // TRIPLE PLASMA', 2.2);
             this.playCategoryBanter('overdrive', 3.8, false, 0.85);
           } else if (this.state.stats.combo === 6 || this.state.stats.combo === 12) {
@@ -1713,19 +1854,23 @@ class BootNAssGame {
           }
         },
         onAllyEnemyKilled: (_e, pos, allyId) => {
-          // Subtle balanced visual/audio feedback so allied kills feel helpful without cluttering the screen!
+          // Crisp bright fireball + light burst so allied kills pop visually without cluttering HUD/audio!
           this.state.addBonusScore(50);
-          this.particles.burst(pos, 12, allyId === 'blitz' ? 0x00ff88 : 0xffd447, 16, 0.85, 0.44);
-          this.particles.burst(pos, 8, 0xff6622, 14, 0.75, 0.38);
+          const allyCol = allyId === 'blitz' ? 0x00ff88 : 0xffd447;
+          this.particles.spawnFireball(pos, allyCol, 2.1, 0.19);
+          this.particles.flashLight(pos, allyCol, 16, 0.2);
+          this.particles.burst(pos, 14, allyCol, 18, 0.85, 0.44, 1.5);
+          this.particles.burst(pos, 8, 0xff6622, 15, 0.75, 0.38);
           this.playCategoryBanter(allyId === 'blitz' ? 'blitzKill' : 'tankKill', 2.9, false, 0.16);
         },
         onCrystalDestroyed: (obs, pos) => {
           this.state.registerHit();
           const pts = this.state.addBonusScore(250);
-          this.audio.playExplosion(false);
+          this.audio.playCrystalShatter();
+          this.audio.playExplosion(false, this.state.stats.combo);
           this.hud.triggerHitMarker();
-          this.particles.burst(pos, 26, 0x00ffd5, 25, 1.25, 0.72);
-          this.particles.spawnShockwave(pos, 0x00ffd5, 7.5, 0.34);
+          this.renderer.pulseBloom(0.18);
+          this.particles.spawnArcadeExplosion(pos, 'medium', 0x00ffd5, 0x00f0ff);
           const sp = this.projectToScreen(pos);
           // Sector 2 Gimmick: Prism Shield Shards restore hull & wingman shields!
           if (level.id === 'prism-belt' && obs.kind === 'crystal_cluster') {
@@ -1735,7 +1880,7 @@ class BootNAssGame {
           } else {
             this.hud.spawnFloatingText(sp.x, sp.y, `SHATTER +${pts}`, '#00ffd5');
           }
-          this.screenShake = Math.max(this.screenShake, 0.26);
+          this.screenShake = Math.max(this.screenShake, 0.28);
         },
         onBossPartHit: (_part, pos, phaseBreak, bossDefeated, partDestroyed, blocked, shatteredShield) => {
           if (blocked) {
@@ -1759,10 +1904,11 @@ class BootNAssGame {
           if (shatteredShield) {
             this.bossPartsDestroyedCount += 1;
             this.state.addBonusScore(1200);
-            this.audio.playExplosion(true);
+            this.audio.playCrystalShatter();
+            this.audio.playExplosion(true, this.state.stats.combo);
             this.input.rumble(0.85, 0.7, 220);
-            this.particles.burst(pos, 42, 0x00ffd5, 32, 1.6, 0.9);
-            this.particles.spawnShockwave(pos, 0x00ffd5, 16, 0.52);
+            this.renderer.pulseBloom(0.32);
+            this.particles.spawnArcadeExplosion(pos, 'mega', 0x00ffd5, 0x00f0ff);
             const sp = this.projectToScreen(pos);
             this.hud.spawnFloatingText(sp.x, sp.y, 'PRISM SHATTERED!! +1200', '#00ffd5');
             this.screenShake = Math.max(this.screenShake, 0.85);
@@ -1775,10 +1921,10 @@ class BootNAssGame {
           } else if (partDestroyed) {
             this.bossPartsDestroyedCount += 1;
             this.state.addBonusScore(800);
-            this.audio.playExplosion(true);
+            this.audio.playExplosion(true, this.state.stats.combo);
             this.input.rumble(0.7, 0.5, 200);
-            this.particles.burst(pos, 36, 0xff4422, 30, 1.5, 0.85);
-            this.particles.spawnShockwave(pos, 0xff4422, 13, 0.48);
+            this.renderer.pulseBloom(0.28);
+            this.particles.spawnArcadeExplosion(pos, 'mega', 0xff4422, 0xffd447);
             this.screenShake = Math.max(this.screenShake, 0.7);
             // Destroying turrets / serpent segments rewards you with tactical mid-fight pickups!
             const shouldDrop =
@@ -1890,8 +2036,13 @@ class BootNAssGame {
           this.audio.playBoost();
           this.audio.playRingPickup();
           this.input.rumble(0.35, 0.45, 130);
+          this.renderer.pulseBloom(streakMult >= 3 ? 0.24 : 0.14);
+          this.particles.flashLight(obs.mesh.position, 0x00ff88, 22, 0.24);
           this.particles.burst(obs.mesh.position, 22, 0x00ff88, 22, 1.0, 0.55);
           this.particles.spawnShockwave(obs.mesh.position, 0x00ff88, 12, 0.42);
+          if (streakMult >= 3) {
+            this.playCategoryBanter('turboChain', 3.2, false, 0.85);
+          }
           const sp = this.projectToScreen(obs.mesh.position);
 
           // Sector 3 Gimmick: Overclock Warp Gates heal the whole squadron + surge weapons!
@@ -1914,8 +2065,11 @@ class BootNAssGame {
         onWeaponCrate: (obs) => {
           this.audio.playPowerup();
           this.input.rumble(0.45, 0.6, 150);
+          this.renderer.pulseBloom(0.24);
+          this.particles.flashLight(obs.mesh.position, 0xd946ff, 26, 0.26);
           this.particles.burst(obs.mesh.position, 26, 0xd946ff, 22, 1.1, 0.55);
           this.particles.spawnShockwave(obs.mesh.position, 0xd946ff, 12, 0.42);
+          this.playCategoryBanter('weaponPickup', 3.0, false, 0.45);
           const dur = this.meta.weaponDurationSec;
           const pick = Math.floor(Math.random() * 3);
           if (pick === 0) {
@@ -1951,7 +2105,7 @@ class BootNAssGame {
 
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 2.8);
-      const s = this.screenShake * 0.72;
+      const s = this.screenShake * 0.72 * this.state.screenShakeScale;
       cam.position.x += (Math.random() - 0.5) * s;
       cam.position.y += (Math.random() - 0.5) * s;
     }
@@ -2274,12 +2428,15 @@ class BootNAssGame {
         this.playCategoryBanter('enemyTriangle', 3.6, false, 0.9);
       } else if (ev.enemy === 'centipede') {
         this.playCategoryBanter('enemyCentipede', 3.6, false, 0.9);
+      } else if (ev.enemy === 'bomber_saucer') {
+        this.playCategoryBanter('enemySaucer', 3.6, false, 0.9);
       }
     } else if (ev.type === 'obstacle') {
       this.obstacles.spawn(ev, level.environment.primaryColor, level.environment.secondaryColor);
     } else if (ev.type === 'track_stunt') {
       this.trackCurve.triggerStunt(ev.stunt, ev.duration);
       this.audio.playWarpEntry();
+      this.renderer.pulseBloom(0.24);
       this.input.rumble(0.42, 0.52, 180);
       const stampMap = {
         loop: '360° NEON LOOP!',
@@ -2290,6 +2447,11 @@ class BootNAssGame {
       const stamp = stampMap[ev.stunt];
       this.hud.showBanner(ev.label ?? stamp, 2.2);
       this.hud.showArcadeStamp(stamp, 'warp');
+      if (ev.stunt === 'loop') {
+        this.playCategoryBanter('stuntLoop', 3.2, false, 0.65);
+      } else if (ev.stunt === 'corkscrew') {
+        this.playCategoryBanter('stuntCorkscrew', 3.2, false, 0.65);
+      }
     } else if (ev.type === 'allies_arrive') {
       this.squadron.deploy(ev.cinematic);
       if (ev.cinematic) {

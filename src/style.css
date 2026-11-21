@@ -1943,3 +1943,9 @@ button:focus-visible {
   color: #e6ffff;
   text-shadow: 0 0 10px #00f0ff;
 }
+
+/* Overdrive / Upgraded Weapon Reticle Glow */
+.reticle-near.overdrive {
+  border-color: var(--gold);
+  box-shadow: 0 0 18px rgba(255, 212, 71, 0.9), inset 0 0 8px rgba(255, 160, 0, 0.5);
+}

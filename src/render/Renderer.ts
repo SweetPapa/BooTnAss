@@ -15,6 +15,8 @@ export class Renderer {
   public readonly scene: THREE.Scene;
   public readonly camera: THREE.PerspectiveCamera;
   private readonly bloom: BloomEffect;
+  private baseBloom = 0.72;
+  private bloomPulse = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.webgl = new THREE.WebGLRenderer({
@@ -82,7 +84,20 @@ export class Renderer {
   };
 
   public setBloomIntensity(val: number): void {
-    this.bloom.intensity = val;
+    this.baseBloom = val;
+    this.bloom.intensity = val + this.bloomPulse;
+  }
+
+  public pulseBloom(boost = 0.24): void {
+    this.bloomPulse = Math.min(0.42, Math.max(this.bloomPulse, boost));
+    this.bloom.intensity = this.baseBloom + this.bloomPulse;
+  }
+
+  public updateEffects(dt: number): void {
+    if (this.bloomPulse > 0) {
+      this.bloomPulse = Math.max(0, this.bloomPulse - dt * 1.15);
+      this.bloom.intensity = this.baseBloom + this.bloomPulse;
+    }
   }
 
   public render(): void {

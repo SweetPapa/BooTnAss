@@ -18,7 +18,14 @@ export interface ObstacleEntity {
   hitRadius: number;
   halfExtents?: THREE.Vector3;
   speedOverride?: number;
+  hitFlashTimer?: number;
+  originalMats?: Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
 }
+
+const OBS_WHITE_FLASH_MAT = new THREE.MeshBasicMaterial({
+  color: new THREE.Color(0xffffff).multiplyScalar(2.6),
+  toneMapped: false,
+});
 
 let nextObstacleId = 1;
 
@@ -65,7 +72,8 @@ export class ObstacleFactory {
       });
       const outer = new THREE.Mesh(new THREE.TorusGeometry(3.1 * scale, 0.24, 6, 18), ringMat);
       const inner = new THREE.Mesh(new THREE.TorusGeometry(2.45 * scale, 0.1, 6, 18), innerMat);
-      group.add(outer, inner);
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.65 * scale, 0), ringMat);
+      group.add(outer, inner, star);
       hitRadius = 3.55 * scale;
     } else if (ev.kind === 'slalom_gate') {
       // High-speed arcade racing turbo checkpoint gate!
@@ -75,21 +83,34 @@ export class ObstacleFactory {
         emissiveIntensity: 3.4,
         flatShading: true,
       });
-      const postGeo = new THREE.CylinderGeometry(0.26, 0.26, 7.5 * scale, 6);
+      const cyanTrim = new THREE.MeshStandardMaterial({
+        color: 0x00f0ff,
+        emissive: new THREE.Color(0x00f0ff),
+        emissiveIntensity: 2.8,
+        flatShading: true,
+      });
+      const postGeo = new THREE.CylinderGeometry(0.28, 0.28, 7.6 * scale, 6);
       const leftPost = new THREE.Mesh(postGeo, neonGreen);
-      leftPost.position.set(-3.4 * scale, 0, 0);
+      leftPost.position.set(-3.5 * scale, 0, 0);
       const rightPost = new THREE.Mesh(postGeo, neonGreen);
-      rightPost.position.set(3.4 * scale, 0, 0);
+      rightPost.position.set(3.5 * scale, 0, 0);
 
-      // Glowing racing chevron arrows pointing forward
-      const barGeo = new THREE.BoxGeometry(6.8 * scale, 0.24, 0.24);
+      // Glowing racing frame + inward neon chevron beacons!
+      const barGeo = new THREE.BoxGeometry(7.0 * scale, 0.26, 0.26);
       const topBar = new THREE.Mesh(barGeo, neonGreen);
-      topBar.position.set(0, 3.6 * scale, 0);
+      topBar.position.set(0, 3.65 * scale, 0);
       const botBar = new THREE.Mesh(barGeo, neonGreen);
-      botBar.position.set(0, -3.6 * scale, 0);
+      botBar.position.set(0, -3.65 * scale, 0);
+
+      for (const side of [-1, 1]) {
+        const chev = new THREE.Mesh(new THREE.ConeGeometry(0.55 * scale, 1.4 * scale, 4), cyanTrim);
+        chev.rotation.z = side * (Math.PI / 2);
+        chev.position.set(side * 4.35 * scale, 0, 0);
+        group.add(chev);
+      }
 
       group.add(leftPost, rightPost, topBar, botBar);
-      hitRadius = 3.8 * scale;
+      hitRadius = 3.9 * scale;
     } else if (ev.kind === 'weapon_crate') {
       // Collectible floating Weapon Upgrade / Nova Bomb power core!
       const coreMat = new THREE.MeshStandardMaterial({
@@ -318,6 +339,14 @@ export class ObstacleFactory {
     group.position.copy(logicalPos);
     this.scene.add(group);
 
+    let originalMats: Map<THREE.Mesh, THREE.Material | THREE.Material[]> | undefined;
+    if (destructible) {
+      originalMats = new Map();
+      group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) originalMats!.set(obj, obj.material);
+      });
+    }
+
     const entity: ObstacleEntity = {
       id: nextObstacleId++,
       kind: ev.kind,
@@ -334,6 +363,8 @@ export class ObstacleFactory {
       hitRadius,
       halfExtents,
       speedOverride: opts?.speedOverride,
+      hitFlashTimer: 0,
+      originalMats,
     };
     this.obstacles.push(entity);
     return entity;
@@ -342,6 +373,12 @@ export class ObstacleFactory {
   public damageCrystal(obs: ObstacleEntity, dmg: number): boolean {
     if (!obs.destructible || !obs.alive) return false;
     obs.hp -= dmg;
+    if (obs.originalMats && obs.hp > 0) {
+      obs.hitFlashTimer = 0.055;
+      obs.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.material = OBS_WHITE_FLASH_MAT;
+      });
+    }
     if (obs.hp <= 0) {
       obs.alive = false;
       this.scene.remove(obs.mesh);
@@ -357,6 +394,15 @@ export class ObstacleFactory {
       if (!o.alive) {
         this.obstacles.splice(i, 1);
         continue;
+      }
+
+      if (o.hitFlashTimer && o.hitFlashTimer > 0) {
+        o.hitFlashTimer -= dt;
+        if (o.hitFlashTimer <= 0 && o.originalMats) {
+          o.originalMats.forEach((mat, mesh) => {
+            mesh.material = mat;
+          });
+        }
       }
 
       o.logicalPos.z += (o.speedOverride ?? railSpeed) * dt;

@@ -112,6 +112,13 @@ export class GameState {
   public difficulty: DifficultyId = 'ace'; // ACE is Recommended Default!
   public mouseAimEnabled = false;
   public muted = false;
+  public invertY = false;
+  public stickSensitivity = 1.0;
+  public deadzone = 0.16;
+  public rumbleScale = 1.0;
+  public autoFire = false;
+  public screenShakeScale = 1.0;
+  public nintendoLayoutPref: boolean | null = null;
 
   public stats: RunStats = this.createFreshStats(100);
 
@@ -127,15 +134,35 @@ export class GameState {
         difficulty: DifficultyId;
         mouseAimEnabled: boolean;
         muted: boolean;
+        invertY: boolean;
+        stickSensitivity: number;
+        deadzone: number;
+        rumbleScale: number;
+        autoFire: boolean;
+        screenShakeScale: number;
+        nintendoLayoutPref: boolean | null;
       }>;
       if (parsed.difficulty && parsed.difficulty in DIFFICULTIES) {
         this.difficulty = parsed.difficulty;
       }
-      if (typeof parsed.mouseAimEnabled === 'boolean') {
-        this.mouseAimEnabled = parsed.mouseAimEnabled;
+      if (typeof parsed.mouseAimEnabled === 'boolean') this.mouseAimEnabled = parsed.mouseAimEnabled;
+      if (typeof parsed.muted === 'boolean') this.muted = parsed.muted;
+      if (typeof parsed.invertY === 'boolean') this.invertY = parsed.invertY;
+      if (typeof parsed.stickSensitivity === 'number' && parsed.stickSensitivity >= 0.5 && parsed.stickSensitivity <= 2.0) {
+        this.stickSensitivity = parsed.stickSensitivity;
       }
-      if (typeof parsed.muted === 'boolean') {
-        this.muted = parsed.muted;
+      if (typeof parsed.deadzone === 'number' && parsed.deadzone >= 0.05 && parsed.deadzone <= 0.35) {
+        this.deadzone = parsed.deadzone;
+      }
+      if (typeof parsed.rumbleScale === 'number' && parsed.rumbleScale >= 0 && parsed.rumbleScale <= 1) {
+        this.rumbleScale = parsed.rumbleScale;
+      }
+      if (typeof parsed.autoFire === 'boolean') this.autoFire = parsed.autoFire;
+      if (typeof parsed.screenShakeScale === 'number' && parsed.screenShakeScale >= 0 && parsed.screenShakeScale <= 1) {
+        this.screenShakeScale = parsed.screenShakeScale;
+      }
+      if (typeof parsed.nintendoLayoutPref === 'boolean') {
+        this.nintendoLayoutPref = parsed.nintendoLayoutPref;
       }
     } catch {
       // ignore storage errors
@@ -150,6 +177,13 @@ export class GameState {
           difficulty: this.difficulty,
           mouseAimEnabled: this.mouseAimEnabled,
           muted: this.muted,
+          invertY: this.invertY,
+          stickSensitivity: this.stickSensitivity,
+          deadzone: this.deadzone,
+          rumbleScale: this.rumbleScale,
+          autoFire: this.autoFire,
+          screenShakeScale: this.screenShakeScale,
+          nintendoLayoutPref: this.nintendoLayoutPref,
         })
       );
     } catch {
