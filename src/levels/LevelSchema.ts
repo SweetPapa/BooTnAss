@@ -23,14 +23,33 @@ export const BannerEventSchema = z.object({
 export const WaveEventSchema = z.object({
   atDistance: z.number().min(0),
   type: z.literal('wave'),
-  enemy: z.enum(['scout', 'weaver', 'turret', 'interceptor']),
+  enemy: z.enum([
+    'scout',
+    'weaver',
+    'turret',
+    'interceptor',
+    'centipede',
+    'doom_triangle',
+    'boot_ship',
+    'bomber_saucer',
+    'ace_stalker',
+  ]),
   formation: z.enum(['line', 'v_shape', 'spiral', 'flanking']),
   count: z.number().int().min(1).max(16),
   spawnOffset: z.object({
     x: z.number().min(-14).max(14),
     y: z.number().min(-8).max(8),
   }),
-  behavior: z.enum(['straight', 'sine_weave', 'swoop_pass', 'hover_fire']),
+  behavior: z.enum([
+    'straight',
+    'sine_weave',
+    'swoop_pass',
+    'hover_fire',
+    'track_strafe',
+    'rear_entry',
+    'centipede_slither',
+    'tail_stalker',
+  ]),
   fireRate: z.number().min(0).max(4),
 });
 

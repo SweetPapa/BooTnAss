@@ -1865,3 +1865,81 @@ button:focus-visible {
   color: #ffe89e;
   margin-top: 3px;
 }
+
+/* Tailgater On-Your-Six Warning Indicator & Reversed Target Diamond */
+.tailgater-alert {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%) translateY(18px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 22px;
+  background: linear-gradient(135deg, rgba(64, 6, 36, 0.92), rgba(22, 4, 24, 0.94));
+  border: 2px solid #ff22cc;
+  border-radius: 7px;
+  box-shadow: 0 0 28px rgba(255, 34, 204, 0.55), inset 0 0 14px rgba(255, 34, 80, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 27;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.tailgater-alert.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  animation: tailgater-pulse 0.65s ease-in-out infinite;
+}
+
+.tailgater-alert-head {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: #ff99ee;
+  text-shadow: 0 0 12px #ff22cc;
+  white-space: nowrap;
+}
+
+.tailgater-alert-hint {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #fff2b2;
+  white-space: nowrap;
+}
+
+.tailgater-hp-track {
+  width: 210px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tailgater-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff2266, #ff22cc);
+  box-shadow: 0 0 10px #ff22cc;
+  transition: width 0.08s linear;
+}
+
+@keyframes tailgater-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 34, 204, 0.45); }
+  50% { box-shadow: 0 0 38px rgba(255, 34, 204, 0.9), 0 0 16px rgba(255, 212, 71, 0.6); }
+}
+
+.distress-marker.reversed .distress-box {
+  border-color: #00f0ff;
+  box-shadow: 0 0 22px rgba(0, 240, 255, 0.9), inset 0 0 12px rgba(255, 34, 204, 0.65);
+}
+
+.distress-marker.reversed .distress-tag {
+  background: rgba(140, 12, 110, 0.92);
+  border-color: #00f0ff;
+  color: #e6ffff;
+  text-shadow: 0 0 10px #00f0ff;
+}

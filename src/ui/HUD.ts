@@ -101,6 +101,10 @@ export class HUD {
   private cinemaTopEl: HTMLElement | null = null;
   private cinemaBotEl: HTMLElement | null = null;
   private squadArrivalEl: HTMLElement | null = null;
+  private tailgaterAlertEl: HTMLElement | null = null;
+  private tailgaterHeadEl: HTMLElement | null = null;
+  private tailgaterHintEl: HTMLElement | null = null;
+  private tailgaterHpEl: HTMLElement | null = null;
   private wingmanRowEls = new Map<string, { row: HTMLElement; status: HTMLElement; fill: HTMLElement }>();
   private distressMarkerEls = new Map<string, HTMLElement>();
   private popupContainer: HTMLElement | null = null;
@@ -654,9 +658,9 @@ export class HUD {
             <div class="control-item"><span class="control-key">SPACE / RT / A</span> Rapid Plasma</div>
             <div class="control-item"><span class="control-key">SHIFT / LT / B</span> Homing Lock-On</div>
             <div class="control-item"><span class="control-key">Q/E / LB/RB</span> Barrel Roll Deflect</div>
-            <div class="control-item"><span class="control-key">R / Y</span> Somersault EMP Flip</div>
+            <div class="control-item"><span class="control-key">R / W×2 / Y</span> Somersault Backflip</div>
             <div class="control-item"><span class="control-key">B / X</span> Nova Smart Bomb</div>
-            <div class="control-item"><span class="control-key">F / L3</span> Boost &nbsp; <span class="control-key">C / R3</span> Brake</div>
+            <div class="control-item"><span class="control-key">F / L3</span> Boost &nbsp; <span class="control-key">C / R3 / LB+RB</span> Brake</div>
             <div class="control-item"><span class="control-key">ESC / START</span> Pause &nbsp; <span class="control-key">F11</span> Fullscreen</div>
           </div>
 
@@ -877,6 +881,11 @@ export class HUD {
 
         <div class="hud-banner" id="hud-banner"></div>
         <div class="tutorial-prompt" id="tutorial-prompt"></div>
+        <div class="tailgater-alert" id="tailgater-alert">
+          <div class="tailgater-alert-head" id="tailgater-head">▲ TAILGATER ON YOUR SIX! ▲</div>
+          <div class="tailgater-hp-track"><div class="tailgater-hp-fill" id="tailgater-hp" style="width:100%"></div></div>
+          <div class="tailgater-alert-hint" id="tailgater-hint">TAP [R / W×2 / Y] BACKFLIP • HOLD [C / LB+RB] BRAKE</div>
+        </div>
 
         <div class="comms-box" id="comms-box">
           <img class="comms-portrait" id="comms-img" src="/assets/art/portrait-commander.jpg" alt="" />
@@ -934,6 +943,10 @@ export class HUD {
     this.cinemaTopEl = document.getElementById('cinema-bar-top');
     this.cinemaBotEl = document.getElementById('cinema-bar-bot');
     this.squadArrivalEl = document.getElementById('squad-arrival-card');
+    this.tailgaterAlertEl = document.getElementById('tailgater-alert');
+    this.tailgaterHeadEl = document.getElementById('tailgater-head');
+    this.tailgaterHintEl = document.getElementById('tailgater-hint');
+    this.tailgaterHpEl = document.getElementById('tailgater-hp');
     this.popupContainer = document.getElementById('popup-container');
     this.mousePill = document.getElementById('pill-mouse');
     this.mutePill = document.getElementById('pill-mute');
@@ -1134,10 +1147,41 @@ export class HUD {
     this.squadArrivalEl?.classList.toggle('visible', active);
   }
 
+  public updateTailgaterHud(
+    onTail: boolean,
+    tailSide: -1 | 1,
+    hpPct: number,
+    gamepadConnected: boolean
+  ): void {
+    if (!this.tailgaterAlertEl) return;
+    this.tailgaterAlertEl.classList.toggle('visible', onTail);
+    if (!onTail) return;
+    if (this.tailgaterHeadEl) {
+      this.tailgaterHeadEl.textContent =
+        tailSide < 0 ? '◄◄ TAILGATER ON LEFT SIX! ◄◄' : '►► TAILGATER ON RIGHT SIX! ►►';
+    }
+    if (this.tailgaterHpEl) {
+      this.tailgaterHpEl.style.width = `${Math.max(0, Math.min(100, hpPct))}%`;
+    }
+    if (this.tailgaterHintEl) {
+      this.tailgaterHintEl.textContent = gamepadConnected
+        ? 'PRESS [Y] SOMERSAULT BACKFLIP  •  HOLD [LB+RB / R3] AIRBRAKE'
+        : 'PRESS [R / W×2] SOMERSAULT BACKFLIP  •  HOLD [C] AIRBRAKE';
+    }
+  }
+
   public updateWingmanHud(
     deployed: boolean,
     allies: WingmanHudEntry[],
-    distressScreenPoints: Array<{ callsign: string; x: number; y: number; inFront: boolean }>
+    distressScreenPoints: Array<{
+      key?: string;
+      callsign: string;
+      label?: string;
+      reversed?: boolean;
+      x: number;
+      y: number;
+      inFront: boolean;
+    }>
   ): void {
     if (this.wingmanWrapEl) {
       const show = deployed && allies.length > 0;
@@ -1179,7 +1223,7 @@ export class HUD {
       const visible = distressScreenPoints.filter(
         (p) => p.inFront && p.x > 20 && p.x < window.innerWidth - 20 && p.y > 20 && p.y < window.innerHeight - 20
       );
-      const activeKeys = new Set(visible.map((p) => p.callsign));
+      const activeKeys = new Set(visible.map((p) => p.key ?? p.callsign));
       for (const [key, el] of this.distressMarkerEls.entries()) {
         if (!activeKeys.has(key)) {
           el.remove();
@@ -1187,14 +1231,19 @@ export class HUD {
         }
       }
       for (const p of visible) {
-        let marker = this.distressMarkerEls.get(p.callsign);
+        const key = p.key ?? p.callsign;
+        const tagText = p.label ?? `HELP ${p.callsign}!`;
+        let marker = this.distressMarkerEls.get(key);
         if (!marker) {
           marker = document.createElement('div');
           marker.className = 'distress-marker';
-          marker.innerHTML = `<div class="distress-box"></div><div class="distress-tag">HELP ${p.callsign}!</div>`;
+          marker.innerHTML = `<div class="distress-box"></div><div class="distress-tag">${tagText}</div>`;
           this.distressLayerEl.appendChild(marker);
-          this.distressMarkerEls.set(p.callsign, marker);
+          this.distressMarkerEls.set(key, marker);
         }
+        marker.classList.toggle('reversed', Boolean(p.reversed));
+        const tagEl = marker.querySelector('.distress-tag');
+        if (tagEl && tagEl.textContent !== tagText) tagEl.textContent = tagText;
         marker.style.left = `${p.x.toFixed(0)}px`;
         marker.style.top = `${p.y.toFixed(0)}px`;
       }

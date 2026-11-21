@@ -214,6 +214,15 @@ export class InputManager {
           this.lastTapKey = 'RIGHT';
           this.lastTapTime = now;
         }
+      } else if (code === 'KeyW' || code === 'ArrowUp') {
+        const now = performance.now();
+        if (this.lastTapKey === 'UP' && now - this.lastTapTime < 260) {
+          this.somersaultQueued = true;
+          this.lastTapKey = null;
+        } else {
+          this.lastTapKey = 'UP';
+          this.lastTapTime = now;
+        }
       }
     }
   };
@@ -296,7 +305,7 @@ export class InputManager {
     let fire = this.keys.has('Space') || this.mouseLeft;
     let chargeLock = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.mouseRight;
     let boost = this.keys.has('KeyF') || this.keys.has('Tab');
-    let brake = this.keys.has('KeyC');
+    let brake = this.keys.has('KeyC') || this.keys.has('ControlLeft');
     let barrelRollDir: -1 | 0 | 1 = this.pendingRollDir;
     this.pendingRollDir = 0;
 
@@ -382,8 +391,14 @@ export class InputManager {
 
       if (btn(fireBtnIdx) || btn(rtIdx) || rtAxis) fire = true;
       if (btn(lockBtnIdx) || btn(ltIdx) || ltAxis) chargeLock = true;
-      if (freshBtn(lbIdx)) barrelRollDir = -1;
-      if (freshBtn(rbIdx)) barrelRollDir = 1;
+      const bothBumpers = btn(lbIdx) && btn(rbIdx);
+      if (bothBumpers) {
+        // Holding LB + RB together engages universal Airbrake on EVERY pad (including 8BitDo)!
+        brake = true;
+      } else {
+        if (freshBtn(lbIdx)) barrelRollDir = -1;
+        if (freshBtn(rbIdx)) barrelRollDir = 1;
+      }
       if (freshBtn(flipBtnIdx)) somersaultPressed = true;
       if (freshBtn(bombBtnIdx)) novaBombPressed = true;
 

@@ -172,9 +172,11 @@ export class CollisionSystem {
       }
     }
 
-    // 2. Player vs Enemies (ramming)
+    // 2. Player vs Enemies (ramming — skip rear fly-past entries & tailgaters so zero cheap offscreen ram hits!)
     for (const e of enemies.enemies) {
       if (!e.alive) continue;
+      if (e.behavior === 'tail_stalker') continue;
+      if (e.behavior === 'rear_entry' && e.age < 1.8) continue;
       const dz = Math.abs(e.mesh.position.z - playerPos.z);
       if (dz < 2.6) {
         const dist = e.mesh.position.distanceTo(playerPos);

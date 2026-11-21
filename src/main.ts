@@ -16,7 +16,7 @@ import { ParticlePool } from './engine/ParticlePool';
 import { CollisionSystem } from './engine/CollisionSystem';
 import { PlayerShip } from './entities/PlayerShip';
 import { ProjectilePool, type HomingTarget } from './entities/ProjectilePool';
-import { EnemyFactory } from './entities/EnemyFactory';
+import { EnemyFactory, type EnemyUpdateCallbacks } from './entities/EnemyFactory';
 import { ObstacleFactory } from './entities/ObstacleFactory';
 import { BossController } from './entities/BossController';
 import { WingmanSquadron, type WingmanCallbacks } from './entities/WingmanSquadron';
@@ -180,6 +180,26 @@ const BANTER: Record<string, BanterLine[]> = {
   tankEject: [
     { voId: 'tank-eject', speaker: 'tank', text: "Hull breached! Bailing out! My ship's cooked—put extra boot in their ass for me, kid!" },
   ],
+  tailgaterLock: [
+    { voId: 'tailgater-lock-1', speaker: 'wingman', text: "Bogey glued to your six! Hit the airbrakes or pull a somersault backflip to flip right behind him!" },
+    { voId: 'tailgater-lock-2', speaker: 'commander', text: "Watch your tailpipe, ace! That rival stalker won't shake loose—somersault or brake to make him overshoot!" },
+  ],
+  tailgaterTaunt: [
+    { voId: 'tailgater-taunt-1', speaker: 'boss', text: "Locked right on your tail, human! You can't shake me—say goodbye to your rear bumper!" },
+  ],
+  tailgaterReversed: [
+    { voId: 'tailgater-reversed-1', speaker: 'grunt', text: "WHOA! WAIT A SECOND! HE PULLED A BACKFLIP?! MY TARGETING SYSTEM IS COOKED!" },
+    { voId: 'tailgater-reversed-2', speaker: 'grunt', text: "AAAH! HE SLAMMED THE BRAKES! I OVERSHOT—DON'T SHOOT MY SHINY THRUSTERS!" },
+  ],
+  enemyBoot: [
+    { voId: 'enemy-boot-1', speaker: 'wingman', text: "Uh... is that a giant flying space boot?! Watch out for the heel rockets and blast those laces!" },
+  ],
+  enemyTriangle: [
+    { voId: 'enemy-triangle-1', speaker: 'commander', text: "Flying triangle of doom dead ahead! That creepy giant eye is staring right at us—shoot it!" },
+  ],
+  enemyCentipede: [
+    { voId: 'enemy-centipede-1', speaker: 'wingman', text: "Ewww! Cyber-centipede slithering across the canyon! Blast that wiggly metal nightmare!" },
+  ],
 };
 
 class BootNAssGame {
@@ -216,6 +236,11 @@ class BootNAssGame {
   // Sector 1 gimmick: Turbo Gate Streak chains!
   private turboStreakCount = 0;
   private turboStreakTimer = 0;
+
+  // Dynamic ambient patrol spawner & tailgater warning pacing
+  private ambientPatrolTimer = 4.2;
+  private ambientPatrolCycle = 0;
+  private tailgaterWarnCooldown = 0;
 
   // True Fisher-Yates shuffle bags (ZERO repeats until every line in a category has played!)
   private shuffleBags = new Map<string, number[]>();
@@ -665,6 +690,9 @@ class BootNAssGame {
     this.casualBanterCooldown = 4.0;
     this.ambientHazardTimer = isBossRetry ? 99 : 1.6;
     this.ambientCycle = 0;
+    this.ambientPatrolTimer = isBossRetry ? 99 : 3.8;
+    this.ambientPatrolCycle = 0;
+    this.tailgaterWarnCooldown = 0;
     this.bossSupplyTimer = 8.5;
     this.bossSupplyCycle = 0;
     this.bossPartsDestroyedCount = 0;
@@ -776,6 +804,44 @@ class BootNAssGame {
     };
   }
 
+  private getEnemyCallbacks(): EnemyUpdateCallbacks {
+    return {
+      onTailgaterLocked: () => {
+        if (this.tailgaterWarnCooldown <= 0) {
+          this.tailgaterWarnCooldown = 9.0;
+          this.audio.playBossAlarm();
+          this.input.rumble(0.45, 0.45, 160);
+          this.hud.showBanner('TAILGATER ON YOUR SIX! [R/Y] BACKFLIP OR [C/LB+RB] BRAKE!', 2.6);
+          this.playCategoryBanter(Math.random() < 0.72 ? 'tailgaterLock' : 'tailgaterTaunt', 3.8, true);
+        }
+      },
+      onTailgaterReversed: (e, method) => {
+        this.hitstopTimer = 0.05;
+        this.audio.playBoost();
+        this.input.rumble(0.7, 0.6, 180);
+        this.hud.triggerScreenFlash('nova');
+        this.particles.spawnShockwave(e.mesh.position.clone(), 0xff22cc, 15, 0.46);
+        this.hud.showArcadeStamp(
+          method === 'somersault' ? 'BACKFLIP REVERSAL!!' : 'AIRBRAKE OVERSHOOT!!',
+          'clear'
+        );
+        this.hud.showBanner('TAILGATER EXPOSED IN FRONT // BLAST HIM NOW!', 2.2);
+        const lineIdx = method === 'somersault' ? 0 : 1;
+        const line = BANTER.tailgaterReversed[lineIdx];
+        this.audio.enqueueVO(
+          line.voId,
+          2,
+          true,
+          () => this.hud.showComms(line.speaker, line.text, 3.4),
+          true
+        );
+      },
+      onTailgaterSpark: (pos, colorHex) => {
+        this.particles.burst(pos, 5, colorHex, 12, 0.55, 0.26);
+      },
+    };
+  }
+
   private triggerNovaBomb(): void {
     if (this.player.novaBombs <= 0) return;
     this.player.novaBombs -= 1;
@@ -854,6 +920,7 @@ class BootNAssGame {
     this.screenShake = 1.5;
     this.hud.setCriticalHull(true, true);
     this.hud.updateWingmanHud(false, [], []);
+    this.hud.updateTailgaterHud(false, 1, 0, false);
     this.hud.showBanner('MAYDAY! MAYDAY! HULL INTEGRITY ZERO!', 2.5);
     this.hud.showArcadeStamp('MAYDAY // HULL BREACH!', 'death');
     this.playDramaticBanter('pilotDeath', 3.6);
@@ -868,6 +935,7 @@ class BootNAssGame {
     this.hud.triggerScreenFlash('gold');
     this.hud.setCriticalHull(false, false);
     this.hud.updateWingmanHud(false, [], []);
+    this.hud.updateTailgaterHud(false, 1, 0, false);
 
     // Vaporize all remaining enemy shots & escorts into golden sparkles (zero post-mortem cheap hits!)
     for (const p of this.projectiles.projectiles) {
@@ -1013,6 +1081,7 @@ class BootNAssGame {
     }
     if (this.casualBanterCooldown > 0) this.casualBanterCooldown -= dt;
     if (this.allyHelpCooldown > 0) this.allyHelpCooldown -= dt;
+    if (this.tailgaterWarnCooldown > 0) this.tailgaterWarnCooldown -= dt;
     if (this.turboBoostTimer > 0) this.turboBoostTimer -= dt;
     if (this.turboStreakTimer > 0) {
       this.turboStreakTimer -= dt;
@@ -1358,14 +1427,17 @@ class BootNAssGame {
     }
     if (startedSomersault) {
       this.audio.playSomersault();
-      this.input.rumble(0.55, 0.45, 160);
-      this.particles.spawnShockwave(this.player.position.clone(), 0xffd447, 16, 0.45);
+      this.input.rumble(0.6, 0.5, 180);
+      this.particles.spawnShockwave(this.player.position.clone(), 0xffd447, 19, 0.48);
+      this.particles.spawnShockwave(this.player.position.clone(), 0x00f0ff, 14, 0.36);
       for (const p of this.projectiles.projectiles) {
-        if (p.active && p.kind === 'enemy_plasma' && p.pos.distanceTo(this.player.position) < 20) {
+        if (p.active && p.kind === 'enemy_plasma' && p.pos.distanceTo(this.player.position) < 26) {
           p.active = false;
           this.particles.burst(p.pos, 6, 0x00f0ff, 14, 0.7, 0.28);
         }
       }
+      // Flip any relentless Tailgater right into our crosshairs!
+      this.enemies.triggerSomersaultCounter(this.getEnemyCallbacks());
     }
     if (input.novaBombPressed) {
       this.triggerNovaBomb();
@@ -1472,6 +1544,19 @@ class BootNAssGame {
           this.spawnAmbientCorridorObject(level);
         }
       }
+
+      // Dynamic Ambient Enemy Patrols — keeps normal levels packed with active tracking fighters!
+      const bossEv = level.timeline.find((e) => e.type === 'boss');
+      const nearBoss = bossEv ? this.timeline.distance > bossEv.atDistance - 260 : false;
+      this.ambientPatrolTimer -= dt;
+      if (this.ambientPatrolTimer <= 0 && !nearBoss) {
+        const patrolCd = lvlIdx === 0 ? 4.5 : lvlIdx === 1 ? 3.9 : 3.4;
+        this.ambientPatrolTimer = patrolCd;
+        const cap = lvlIdx === 0 ? 7 : lvlIdx === 1 ? 9 : 11;
+        if (this.enemies.enemies.length < cap) {
+          this.spawnAmbientPatrol(level);
+        }
+      }
     } else if (this.boss.active && this.bossClearDelay <= 0) {
       // Zorp Tactical Supply Drops during Boss Battles — grab Shield Rings & Weapon Crates mid-fight!
       this.bossSupplyTimer -= dt;
@@ -1507,6 +1592,7 @@ class BootNAssGame {
 
     // 5. Update World, Enemies, Obstacles, Boss, Projectiles, Particles (scaled by Difficulty!)
     this.env.update(dt, railSpeed, isSuperBoost, this.trackCurve);
+    const enemyCb = this.getEnemyCallbacks();
     this.enemies.update(
       dt,
       railSpeed,
@@ -1514,7 +1600,9 @@ class BootNAssGame {
       this.projectiles,
       diffCfg.enemyFireRateMult,
       diffCfg.projectileSpeedMult,
-      diffCfg.damageTakenMult
+      diffCfg.damageTakenMult,
+      this.player.isBraking,
+      enemyCb
     );
     this.obstacles.update(dt, railSpeed, this.trackCurve);
     this.boss.update(
@@ -1575,15 +1663,43 @@ class BootNAssGame {
           const { points, enteredOverdrive } = this.state.registerKill(e.scoreValue);
           this.registerMultiKill();
           this.squadron.notifyPlayerKilledEnemy(e, wingmanCb);
-          this.audio.playExplosion(false);
+          const isBigFoe =
+            e.kind === 'boot_ship' ||
+            e.kind === 'doom_triangle' ||
+            e.kind === 'centipede' ||
+            e.kind === 'ace_stalker' ||
+            e.kind === 'bomber_saucer';
+          this.audio.playExplosion(isBigFoe);
           this.hud.triggerHitMarker();
-          this.input.rumble(0.22, 0.35, 75);
-          this.particles.burst(pos, 24, 0xff5500, 22, 1.15, 0.62);
-          this.particles.burst(pos, 10, 0xffd447, 16, 0.85, 0.45);
-          this.particles.spawnShockwave(pos, 0xff7722, 6.5, 0.3);
+          this.input.rumble(isBigFoe ? 0.55 : 0.22, isBigFoe ? 0.5 : 0.35, isBigFoe ? 140 : 75);
+          this.particles.burst(pos, isBigFoe ? 38 : 24, isBigFoe ? 0xff33aa : 0xff5500, isBigFoe ? 28 : 22, isBigFoe ? 1.4 : 1.15, isBigFoe ? 0.78 : 0.62);
+          this.particles.burst(pos, isBigFoe ? 20 : 10, 0xffd447, 18, 0.95, 0.5);
+          this.particles.spawnShockwave(pos, isBigFoe ? 0xffd447 : 0xff7722, isBigFoe ? 11.5 : 6.5, isBigFoe ? 0.42 : 0.3);
           const sp = this.projectToScreen(pos);
-          this.hud.spawnFloatingText(sp.x, sp.y, `+${points.toLocaleString()}`, this.state.isOverdrive ? '#ffd447' : '#00f0ff');
-          this.screenShake = Math.max(this.screenShake, 0.28);
+
+          if (e.behavior === 'tail_stalker') {
+            this.hud.spawnFloatingText(sp.x, sp.y, `TAIL SHAKEN! +${points.toLocaleString()}`, '#ff66ee');
+            this.hud.showArcadeStamp('TAILGATER VAPORIZED!!', 'clear');
+            this.hud.showBanner('TAIL CLEAR // BONUS SUPPLY DROPPED!', 2.2);
+            this.spawnBossPickupAt(
+              level,
+              this.player.shield < this.player.maxShield * 0.7 ? 'boost_ring' : 'weapon_crate',
+              pos.x,
+              pos.y,
+              Math.min(-45, pos.z - 12),
+              42
+            );
+          } else if (e.kind === 'boot_ship') {
+            this.hud.spawnFloatingText(sp.x, sp.y, `BOOT CRUSHED! +${points.toLocaleString()}`, '#ffd447');
+          } else if (e.kind === 'doom_triangle') {
+            this.hud.spawnFloatingText(sp.x, sp.y, `DOOM SHATTERED! +${points.toLocaleString()}`, '#ffd447');
+          } else if (e.kind === 'centipede') {
+            this.hud.spawnFloatingText(sp.x, sp.y, `BUG SQUASHED! +${points.toLocaleString()}`, '#33ff88');
+          } else {
+            this.hud.spawnFloatingText(sp.x, sp.y, `+${points.toLocaleString()}`, this.state.isOverdrive ? '#ffd447' : '#00f0ff');
+          }
+
+          this.screenShake = Math.max(this.screenShake, isBigFoe ? 0.52 : 0.28);
           if (enteredOverdrive) {
             this.hud.showBanner('10x OVERDRIVE // TRIPLE PLASMA', 2.2);
             this.playCategoryBanter('overdrive', 3.8, false, 0.85);
@@ -1824,13 +1940,14 @@ class BootNAssGame {
       }
     );
 
-    // 8. Camera Spring Tracking + Space-Coaster Banking + Hyper-Warp FOV Punch + Screen Shake
+    // 8. Camera Spring Tracking + Space-Coaster Banking + Somersault Backflip Pull + Screen Shake
+    const flipArc = Math.sin(this.player.somersaultProgress01 * Math.PI);
     const camTargetX = this.player.position.x * 0.42;
-    const camTargetY = this.player.position.y * 0.38 + 2.1;
+    const camTargetY = this.player.position.y * 0.38 + 2.1 + flipArc * 2.1;
     const cam = this.renderer.camera;
     cam.position.x += (camTargetX - cam.position.x) * Math.min(1, dt * 6.5);
     cam.position.y += (camTargetY - cam.position.y) * Math.min(1, dt * 6.5);
-    cam.position.z = 14;
+    cam.position.z = THREE.MathUtils.lerp(cam.position.z, 14 + flipArc * 3.0, Math.min(1, dt * 7));
 
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 2.8);
@@ -1841,18 +1958,19 @@ class BootNAssGame {
 
     const targetFov =
       (this.warpEntryTimer > 0.25 ? 88 : isSuperBoost ? 78 : this.player.isBraking ? 55 : 65) +
-      this.trackCurve.stuntFovBonus;
+      this.trackCurve.stuntFovBonus +
+      flipArc * 10;
     cam.fov += (targetFov - cam.fov) * Math.min(1, dt * 6);
     cam.updateProjectionMatrix();
 
     cam.lookAt(
       this.player.position.x * 0.3 + this.trackCurve.curveX * 0.32,
-      this.player.position.y * 0.25 + this.trackCurve.curveY * 0.22 + this.trackCurve.cameraPitchOffset * 28,
+      this.player.position.y * 0.25 + this.trackCurve.curveY * 0.22 + this.trackCurve.cameraPitchOffset * 28 + flipArc * 2.5,
       -45
     );
     cam.rotation.z += this.trackCurve.bankRoll;
 
-    // 9. Project Reticle, Lock-On Brackets & Wingman Distress Markers
+    // 9. Project Reticle, Lock-On Brackets, Wingman Distress & Tailgater Target Markers
     const { near, far } = this.player.getReticleWorldPoints();
     const nearScreen = this.projectToScreen(near);
     const farScreen = this.projectToScreen(far);
@@ -1862,14 +1980,38 @@ class BootNAssGame {
       .map((t) => this.projectToScreen(t.getPosition(tmpPos)));
 
     const wingHud = this.squadron.getHudState();
-    const distressPoints = wingHud.distressTargets.map((t) => {
+    const tgHud = this.enemies.getTailgaterHudInfo();
+    this.hud.updateTailgaterHud(tgHud.onTail, tgHud.tailSide, tgHud.hpPct, input.gamepadConnected);
+
+    const distressPoints: Array<{
+      key?: string;
+      callsign: string;
+      label?: string;
+      reversed?: boolean;
+      x: number;
+      y: number;
+      inFront: boolean;
+    }> = wingHud.distressTargets.map((t) => {
       const p = t.worldPos.clone().project(cam);
       return {
+        key: `wing-${t.callsign}`,
         callsign: t.callsign,
         x: (p.x * 0.5 + 0.5) * window.innerWidth,
         y: (-p.y * 0.5 + 0.5) * window.innerHeight,
         inFront: p.z < 1,
       };
+    });
+    tgHud.exposedTargets.forEach((t, idx) => {
+      const p = t.worldPos.clone().project(cam);
+      distressPoints.push({
+        key: `tail-${idx}`,
+        callsign: 'TAIL',
+        label: t.label,
+        reversed: t.isReversed,
+        x: (p.x * 0.5 + 0.5) * window.innerWidth,
+        y: (-p.y * 0.5 + 0.5) * window.innerHeight,
+        inFront: p.z < 1,
+      });
     });
     this.hud.updateWingmanHud(wingHud.deployed, wingHud.allies, distressPoints);
 
@@ -2044,6 +2186,79 @@ class BootNAssGame {
     }
   }
 
+  private spawnAmbientPatrol(level: LevelConfig): void {
+    this.ambientPatrolCycle += 1;
+    const hpMult = this.state.difficultyConfig.enemyHpMult;
+    const lvlIdx = this.state.currentLevelIndex;
+    const roll = this.ambientPatrolCycle % 6;
+    const fireBase = 0.85 + lvlIdx * 0.15;
+
+    if (roll === 0 || roll === 3) {
+      // Dynamic tracking wing squad that holds screen and dogfights with you!
+      this.enemies.spawnWave(
+        {
+          atDistance: 0,
+          type: 'wave',
+          enemy: roll === 0 ? 'scout' : 'weaver',
+          formation: 'v_shape',
+          count: 3 + lvlIdx,
+          spawnOffset: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 3.5 },
+          behavior: 'track_strafe',
+          fireRate: fireBase,
+        },
+        hpMult
+      );
+    } else if (roll === 1 || roll === 4) {
+      // Classic rear-entry ambush fighters roaring forward past your wingtips!
+      this.enemies.spawnWave(
+        {
+          atDistance: 0,
+          type: 'wave',
+          enemy: lvlIdx === 0 ? 'scout' : 'interceptor',
+          formation: 'flanking',
+          count: 2 + Math.min(2, lvlIdx),
+          spawnOffset: { x: 0, y: (Math.random() - 0.5) * 3 },
+          behavior: 'rear_entry',
+          fireRate: fireBase + 0.1,
+        },
+        hpMult
+      );
+    } else if (roll === 2) {
+      // Wacky Disco Saucer or Cyber-Centipede surprise!
+      const isCentipede = Math.random() < 0.5;
+      this.enemies.spawnWave(
+        {
+          atDistance: 0,
+          type: 'wave',
+          enemy: isCentipede ? 'centipede' : 'bomber_saucer',
+          formation: 'line',
+          count: 1,
+          spawnOffset: { x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 2 },
+          behavior: isCentipede ? 'centipede_slither' : 'track_strafe',
+          fireRate: fireBase,
+        },
+        hpMult
+      );
+    } else {
+      // Heavy comedic mini-ace (Giant Space Boot Ship OR Flying Triangle of Doom)!
+      const isBoot = (this.ambientPatrolCycle + lvlIdx) % 2 === 0;
+      this.enemies.spawnWave(
+        {
+          atDistance: 0,
+          type: 'wave',
+          enemy: isBoot ? 'boot_ship' : 'doom_triangle',
+          formation: 'line',
+          count: 1,
+          spawnOffset: { x: (Math.random() - 0.5) * 5, y: 0.8 },
+          behavior: 'track_strafe',
+          fireRate: fireBase,
+        },
+        hpMult
+      );
+    }
+    void level;
+  }
+
   private handleTimelineEvent(ev: TimelineEvent, level: LevelConfig): void {
     if (ev.type === 'banner') {
       this.hud.showBanner(ev.text, 2.6);
@@ -2053,6 +2268,13 @@ class BootNAssGame {
       }
     } else if (ev.type === 'wave') {
       this.enemies.spawnWave(ev, this.state.difficultyConfig.enemyHpMult);
+      if (ev.enemy === 'boot_ship') {
+        this.playCategoryBanter('enemyBoot', 3.6, false, 0.9);
+      } else if (ev.enemy === 'doom_triangle') {
+        this.playCategoryBanter('enemyTriangle', 3.6, false, 0.9);
+      } else if (ev.enemy === 'centipede') {
+        this.playCategoryBanter('enemyCentipede', 3.6, false, 0.9);
+      }
     } else if (ev.type === 'obstacle') {
       this.obstacles.spawn(ev, level.environment.primaryColor, level.environment.secondaryColor);
     } else if (ev.type === 'track_stunt') {
@@ -2093,6 +2315,8 @@ class BootNAssGame {
       this.hud.setBossCheckpoint(true);
       const bossVideo = BOSS_CUTSCENE_MAP[ev.bossId];
       const launchBossFight = () => {
+        this.enemies.disengageTailgatersForBoss();
+        this.hud.updateTailgaterHud(false, 1, 0, false);
         this.bossSupplyTimer = 7.5;
         this.bossSupplyCycle = 0;
         this.bossPartsDestroyedCount = 0;

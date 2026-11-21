@@ -23,8 +23,12 @@ export class AudioSynth {
   private crawlTimer = 0;
   private crawlStep = 0;
 
-  // Real MP3 background music engine
+  // Gapless Web Audio MP3 background music engine (with HTMLAudioElement fallback)
   private bgmAudio: HTMLAudioElement | null = null;
+  private bgmBufferCache = new Map<string, AudioBuffer>();
+  private bgmSource: AudioBufferSourceNode | null = null;
+  private bgmGain: GainNode | null = null;
+  private bgmPlayToken = 0;
   private currentTrackId: string | null = null;
   private bgmBaseVolume = 0.42;
   private bgmDuckFactor = 0.72; // Gentle ducking during gameplay so music stays punchy!
@@ -108,16 +112,67 @@ export class AudioSynth {
     this.bgmBaseVolume = volume;
     this.bgmDuckFactor = duckFactor;
 
-    if (this.currentTrackId === trackId && this.bgmAudio && !this.bgmAudio.paused) {
+    if (
+      this.currentTrackId === trackId &&
+      (this.bgmSource !== null || (this.bgmAudio && !this.bgmAudio.paused))
+    ) {
       this.updateBgmDucking();
       return;
     }
 
     this.stopMusicTrack();
     this.currentTrackId = trackId;
+    const token = ++this.bgmPlayToken;
+    this.unlock();
+
+    if (this.ctx && this.bgmGain) {
+      void this.startGaplessBgm(trackId, loop, token);
+      return;
+    }
+
+    this.startFallbackHtmlAudio(trackId, loop);
+  }
+
+  private async startGaplessBgm(trackId: string, loop: boolean, token: number): Promise<void> {
+    try {
+      if (!this.ctx || !this.bgmGain) {
+        this.startFallbackHtmlAudio(trackId, loop);
+        return;
+      }
+      let buf = this.bgmBufferCache.get(trackId);
+      if (!buf) {
+        const res = await fetch(`/assets/music/${trackId}.mp3`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const arr = await res.arrayBuffer();
+        if (token !== this.bgmPlayToken || !this.ctx) return;
+        buf = await this.ctx.decodeAudioData(arr);
+        this.bgmBufferCache.set(trackId, buf);
+      }
+      if (token !== this.bgmPlayToken || !this.ctx || !this.bgmGain) return;
+
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = loop;
+      if (loop && buf.duration > 1.0) {
+        // Trim LAME MP3 encoder leading/trailing padding frames for 0.000ms gapless looping!
+        src.loopStart = 0.03;
+        src.loopEnd = Math.max(0.5, buf.duration - 0.045);
+      }
+      src.connect(this.bgmGain);
+      this.bgmSource = src;
+      this.updateBgmDucking();
+      src.start(0, loop && buf.duration > 1.0 ? 0.03 : 0);
+    } catch {
+      if (token === this.bgmPlayToken) {
+        this.startFallbackHtmlAudio(trackId, loop);
+      }
+    }
+  }
+
+  private startFallbackHtmlAudio(trackId: string, loop: boolean): void {
     const audio = new Audio(`/assets/music/${trackId}.mp3`);
     audio.loop = loop;
-    audio.volume = this.muted ? 0 : this.voPlaying ? volume * duckFactor : volume;
+    audio.volume = this.muted ? 0 : this.voPlaying ? this.bgmBaseVolume * this.bgmDuckFactor : this.bgmBaseVolume;
     this.bgmAudio = audio;
     audio.play().catch(() => {
       // Will start on next user gesture if autoplay is blocked
@@ -125,12 +180,25 @@ export class AudioSynth {
   }
 
   public resumeMusicIfPaused(): void {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
     if (this.bgmAudio && this.bgmAudio.paused && !this.muted) {
       this.bgmAudio.play().catch(() => {});
     }
   }
 
   public stopMusicTrack(): void {
+    this.bgmPlayToken++;
+    if (this.bgmSource) {
+      try {
+        this.bgmSource.stop();
+        this.bgmSource.disconnect();
+      } catch {
+        // already stopped
+      }
+      this.bgmSource = null;
+    }
     if (this.bgmAudio) {
       this.bgmAudio.pause();
       this.bgmAudio.currentTime = 0;
@@ -140,13 +208,17 @@ export class AudioSynth {
   }
 
   private updateBgmDucking(): void {
-    if (!this.bgmAudio) return;
-    if (this.muted) {
-      this.bgmAudio.volume = 0;
-    } else {
-      this.bgmAudio.volume = this.voPlaying
+    const targetVol = this.muted
+      ? 0
+      : this.voPlaying
         ? this.bgmBaseVolume * this.bgmDuckFactor
         : this.bgmBaseVolume;
+
+    if (this.bgmGain && this.ctx) {
+      this.bgmGain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.04);
+    }
+    if (this.bgmAudio) {
+      this.bgmAudio.volume = targetVol;
     }
   }
 
@@ -157,6 +229,10 @@ export class AudioSynth {
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.value = this.muted ? 0 : 0.42;
       this.masterGain.connect(this.ctx.destination);
+
+      this.bgmGain = this.ctx.createGain();
+      this.bgmGain.gain.value = this.muted ? 0 : this.bgmBaseVolume;
+      this.bgmGain.connect(this.ctx.destination);
 
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.value = 0.24;

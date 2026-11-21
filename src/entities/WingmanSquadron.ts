@@ -428,30 +428,36 @@ export class WingmanSquadron {
     }
     this.lastStuntActive = stuntNow;
 
-    // Periodically assign an enemy bogey to chase one of the living wingmen ("SAVE ME!" dogfight!)
-    const activePursuits = this.ships.filter((s) => s.alive && s.pursuer && s.pursuer.alive).length;
-    if (activePursuits === 0 && !boss.dying) {
+    // Periodically send an enemy bogey (or spawn a fresh ambush interceptor!) to dogfight Blitz or Tank!
+    const aliveAllies = this.ships.filter((s) => s.alive && !s.ejected);
+    const unchasedAllies = aliveAllies.filter((s) => !s.pursuer || !s.pursuer.alive);
+    const activePursuits = aliveAllies.length - unchasedAllies.length;
+    if (unchasedAllies.length > 0 && activePursuits < 2 && !boss.dying) {
       this.pursuitSpawnTimer -= dt;
       if (this.pursuitSpawnTimer <= 0) {
-        const aliveAllies = this.ships.filter((s) => s.alive && !s.ejected);
+        const targetAlly = unchasedAllies[Math.floor(Math.random() * unchasedAllies.length)];
         const candidates = enemies.enemies.filter(
           (e) =>
             e.alive &&
             !e.pursuingAlly &&
-            e.kind !== 'turret' &&
-            e.mesh.position.z < -26 &&
+            e.behavior !== 'tail_stalker' &&
+            (e.kind === 'scout' || e.kind === 'weaver' || e.kind === 'interceptor' || e.kind === 'ace_stalker') &&
+            e.mesh.position.z < -24 &&
             e.mesh.position.z > -135
         );
-        if (aliveAllies.length > 0 && candidates.length > 0) {
-          const targetAlly = aliveAllies[Math.floor(Math.random() * aliveAllies.length)];
-          const chaser = candidates[0];
-          chaser.pursuingAlly = targetAlly.id;
-          targetAlly.pursuer = chaser;
-          targetAlly.helpCalledForPursuer = false;
-          this.pursuitSpawnTimer = 14.5;
+        let chaser: EnemyEntity;
+        if (candidates.length > 0) {
+          chaser = candidates[0];
         } else {
-          this.pursuitSpawnTimer = 2.0;
+          // Spawn a dedicated high-speed ambush hunter diving in from the flank!
+          const side = targetAlly.id === 'blitz' ? -1 : 1;
+          const kind = Math.random() < 0.55 ? 'interceptor' : 'scout';
+          chaser = enemies.spawnSingle(kind, side * 11, 4.5, -118, 'swoop_pass', 0.9, Math.random() * 6, 1.0);
         }
+        chaser.pursuingAlly = targetAlly.id;
+        targetAlly.pursuer = chaser;
+        targetAlly.helpCalledForPursuer = false;
+        this.pursuitSpawnTimer = activePursuits === 0 ? 8.8 : 13.5;
       }
     }
 
@@ -609,30 +615,42 @@ export class WingmanSquadron {
       // If pursued by a bogey, steer the bogey aggressively on their tail across the sky so the player gets an awesome rescue shot!
       if (s.pursuer && s.pursuer.alive) {
         const ch = s.pursuer;
-        const chTargetX = THREE.MathUtils.clamp(s.root.position.x - s.vel.x * 0.16 + Math.sin(this.age * 4.2) * 1.4, -9.8, 9.8);
-        const chTargetY = THREE.MathUtils.clamp(s.root.position.y - s.vel.y * 0.14 + 0.5 + Math.cos(this.age * 3.5) * 0.8, -4.4, 4.8);
-        const chTargetZ = THREE.MathUtils.clamp(s.root.position.z - 10.5, -42, -18);
+        const chTargetX = THREE.MathUtils.clamp(s.root.position.x - s.vel.x * 0.16 + Math.sin(this.age * 4.4) * 1.9, -9.8, 9.8);
+        const chTargetY = THREE.MathUtils.clamp(s.root.position.y - s.vel.y * 0.14 + 0.65 + Math.cos(this.age * 3.7) * 1.1, -4.4, 4.8);
+        const chTargetZ = THREE.MathUtils.clamp(s.root.position.z - 10.5 + Math.sin(this.age * 2.4) * 2.5, -42, -17);
 
         const prevChX = ch.mesh.position.x;
-        ch.mesh.position.x = THREE.MathUtils.lerp(ch.mesh.position.x, chTargetX, Math.min(1, dt * 5.0));
-        ch.mesh.position.y = THREE.MathUtils.lerp(ch.mesh.position.y, chTargetY, Math.min(1, dt * 5.0));
-        ch.mesh.position.z = THREE.MathUtils.lerp(ch.mesh.position.z, chTargetZ, Math.min(1, dt * 4.2));
+        const prevChY = ch.mesh.position.y;
+        ch.mesh.position.x = THREE.MathUtils.lerp(ch.mesh.position.x, chTargetX, Math.min(1, dt * 5.2));
+        ch.mesh.position.y = THREE.MathUtils.lerp(ch.mesh.position.y, chTargetY, Math.min(1, dt * 5.2));
+        ch.mesh.position.z = THREE.MathUtils.lerp(ch.mesh.position.z, chTargetZ, Math.min(1, dt * 4.4));
         const chVx = (ch.mesh.position.x - prevChX) / Math.max(0.001, dt);
-        ch.mesh.rotation.z = THREE.MathUtils.lerp(ch.mesh.rotation.z, THREE.MathUtils.clamp(-chVx * 0.07, -0.9, 0.9), dt * 8);
+        const chVy = (ch.mesh.position.y - prevChY) / Math.max(0.001, dt);
+        ch.mesh.rotation.z = THREE.MathUtils.lerp(ch.mesh.rotation.z, THREE.MathUtils.clamp(-chVx * 0.075, -1.05, 1.05), dt * 8.5);
+        ch.mesh.rotation.x = THREE.MathUtils.lerp(ch.mesh.rotation.x, THREE.MathUtils.clamp(chVy * 0.04, -0.45, 0.45), dt * 7);
+        ch.mesh.rotation.y = THREE.MathUtils.lerp(ch.mesh.rotation.y, THREE.MathUtils.clamp(-chVx * 0.025, -0.4, 0.4), dt * 7);
 
-        // Once bogey closes in, ally calls for help, pulls desperate barrel rolls & takes damage until rescued!
+        // Bright crimson contrail on chasing hunter so the dogfight pops visually!
+        if (cb.onTrail && Math.random() < 0.45) {
+          cb.onTrail(ch.mesh.position.clone().add(new THREE.Vector3(0, 0, -1.5)), 0xff2244, 0.24);
+        }
+
+        // Once bogey closes in, ally calls for help, pulls desperate barrel rolls & takes fire until rescued!
         if (ch.mesh.position.z > -46) {
           if (!s.helpCalledForPursuer) {
             s.helpCalledForPursuer = true;
             this.triggerRoll(s, 0.56);
             cb.onNeedHelp(s.id, s.callsign);
           }
-          const dps = 5.4 * Math.min(1.3, difficultyDmgMult);
+          const dps = 5.2 * Math.min(1.3, difficultyDmgMult);
           s.hp = Math.max(0, s.hp - dps * dt);
           s.damageSparkTimer -= dt;
           if (s.damageSparkTimer <= 0) {
-            s.damageSparkTimer = 0.24;
-            cb.onSpark(s.root.position.clone(), 0xff6622);
+            s.damageSparkTimer = 0.2;
+            // Visible laser dogfight flash halfway between pursuer & ally + hull sparks!
+            const mid = ch.mesh.position.clone().lerp(s.root.position, 0.55);
+            cb.onSpark(mid, 0xff2244);
+            cb.onSpark(s.root.position.clone(), 0xff8822);
           }
           if (s.hp <= 0) {
             s.alive = false;

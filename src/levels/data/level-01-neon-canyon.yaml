@@ -65,6 +65,15 @@ timeline:
     scale: 1.15
     rotationSpeed: 0.0
 
+  - atDistance: 910
+    type: "wave"
+    enemy: "scout"
+    formation: "flanking"
+    count: 4
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "rear_entry"
+    fireRate: 0.85
+
   - atDistance: 950
     type: "obstacle"
     kind: "boost_ring"
@@ -108,8 +117,17 @@ timeline:
     formation: "flanking"
     count: 7
     spawnOffset: { x: 0, y: 0 }
-    behavior: "swoop_pass"
+    behavior: "track_strafe"
     fireRate: 1.0
+
+  - atDistance: 1680
+    type: "wave"
+    enemy: "bomber_saucer"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 1.2 }
+    behavior: "track_strafe"
+    fireRate: 0.85
 
   - atDistance: 1740
     type: "obstacle"
@@ -294,6 +312,15 @@ timeline:
     scale: 1.2
     rotationSpeed: 0.0
 
+  - atDistance: 4440
+    type: "wave"
+    enemy: "centipede"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "centipede_slither"
+    fireRate: 0.95
+
   - atDistance: 4500
     type: "obstacle"
     kind: "weapon_crate"
@@ -385,6 +412,20 @@ timeline:
     position: { x: 4.5, y: 0 }
     scale: 1.05
     rotationSpeed: 0.0
+
+  # ==================== SIGNATURE SECTOR 1 MIDPOINT TAILGATER! ====================
+  - atDistance: 5690
+    type: "banner"
+    text: "ALERT // RIVAL ACE TAILGATER ON YOUR SIX!"
+
+  - atDistance: 5710
+    type: "wave"
+    enemy: "ace_stalker"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 4.0, y: 1.0 }
+    behavior: "tail_stalker"
+    fireRate: 1.05
 
   - atDistance: 5750
     type: "obstacle"
@@ -483,6 +524,15 @@ timeline:
     scale: 1.15
     rotationSpeed: 0.0
 
+  - atDistance: 6950
+    type: "wave"
+    enemy: "boot_ship"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "track_strafe"
+    fireRate: 0.9
+
   - atDistance: 7000
     type: "obstacle"
     kind: "weapon_crate"
@@ -568,6 +618,15 @@ timeline:
     scale: 1.15
     rotationSpeed: -1.25
 
+  - atDistance: 7850
+    type: "wave"
+    enemy: "doom_triangle"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 1.2 }
+    behavior: "track_strafe"
+    fireRate: 0.95
+
   - atDistance: 7900
     type: "obstacle"
     kind: "boost_ring"
@@ -606,6 +665,15 @@ timeline:
     position: { x: -3.0, y: 0.8 }
     scale: 1.2
     rotationSpeed: 0.0
+
+  - atDistance: 8380
+    type: "wave"
+    enemy: "interceptor"
+    formation: "flanking"
+    count: 4
+    spawnOffset: { x: 0, y: 0.4 }
+    behavior: "rear_entry"
+    fireRate: 1.1
 
   - atDistance: 8420
     type: "obstacle"
@@ -660,6 +728,15 @@ timeline:
     scale: 1.25
     rotationSpeed: 1.0
 
+  - atDistance: 9090
+    type: "wave"
+    enemy: "centipede"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "centipede_slither"
+    fireRate: 1.05
+
   - atDistance: 9160
     type: "obstacle"
     kind: "slalom_gate"
@@ -704,6 +781,15 @@ timeline:
     scale: 1.2
     rotationSpeed: 1.35
 
+  - atDistance: 9690
+    type: "wave"
+    enemy: "boot_ship"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "track_strafe"
+    fireRate: 1.0
+
   - atDistance: 9740
     type: "track_stunt"
     stunt: "loop"
@@ -736,6 +822,15 @@ timeline:
     rotationSpeed: -1.1
     driftX: -6.0
     driftY: 0.3
+
+  - atDistance: 10200
+    type: "wave"
+    enemy: "ace_stalker"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: -4.0, y: 1.0 }
+    behavior: "tail_stalker"
+    fireRate: 1.15
 
   # ==================== CANYON DEFENSE ARMADA CLIMAX ====================
   - atDistance: 10280
@@ -780,6 +875,15 @@ timeline:
     position: { x: 2.2, y: 0 }
     scale: 1.2
     rotationSpeed: -1.4
+
+  - atDistance: 10910
+    type: "wave"
+    enemy: "doom_triangle"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "track_strafe"
+    fireRate: 1.05
 
   - atDistance: 10960
     type: "wave"

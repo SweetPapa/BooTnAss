@@ -81,6 +81,15 @@ timeline:
     scale: 1.15
     rotationSpeed: 0.0
 
+  - atDistance: 1270
+    type: "wave"
+    enemy: "centipede"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0.5 }
+    behavior: "centipede_slither"
+    fireRate: 1.0
+
   - atDistance: 1350
     type: "obstacle"
     kind: "laser_bar"
@@ -158,6 +167,15 @@ timeline:
     position: { x: 0, y: 0 }
     scale: 1.55
     rotationSpeed: 0.8
+
+  - atDistance: 2860
+    type: "wave"
+    enemy: "doom_triangle"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "track_strafe"
+    fireRate: 1.05
 
   - atDistance: 2920
     type: "banner"
@@ -251,8 +269,17 @@ timeline:
     formation: "spiral"
     count: 8
     spawnOffset: { x: 0, y: 0 }
-    behavior: "sine_weave"
+    behavior: "track_strafe"
     fireRate: 1.2
+
+  - atDistance: 5000
+    type: "wave"
+    enemy: "bomber_saucer"
+    formation: "flanking"
+    count: 2
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "track_strafe"
+    fireRate: 1.0
 
   - atDistance: 5120
     type: "obstacle"
@@ -267,6 +294,15 @@ timeline:
     position: { x: -2.0, y: 1.0 }
     scale: 1.1
     rotationSpeed: 1.4
+
+  - atDistance: 5420
+    type: "wave"
+    enemy: "ace_stalker"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 4.5, y: 1.0 }
+    behavior: "tail_stalker"
+    fireRate: 1.15
 
   - atDistance: 5540
     type: "wave"
@@ -344,6 +380,15 @@ timeline:
     scale: 1.5
     rotationSpeed: 0.7
 
+  - atDistance: 7560
+    type: "wave"
+    enemy: "boot_ship"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "track_strafe"
+    fireRate: 1.05
+
   - atDistance: 7640
     type: "obstacle"
     kind: "crystal_cluster"
@@ -386,7 +431,7 @@ timeline:
     formation: "flanking"
     count: 9
     spawnOffset: { x: 0, y: 0 }
-    behavior: "swoop_pass"
+    behavior: "rear_entry"
     fireRate: 1.35
 
   - atDistance: 8960
@@ -395,6 +440,15 @@ timeline:
     position: { x: 4.5, y: -0.8 }
     scale: 1.15
     rotationSpeed: 0.0
+
+  - atDistance: 9080
+    type: "wave"
+    enemy: "centipede"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "centipede_slither"
+    fireRate: 1.15
 
   - atDistance: 9200
     type: "obstacle"
@@ -455,6 +509,15 @@ timeline:
     scale: 1.2
     rotationSpeed: -1.4
 
+  - atDistance: 11060
+    type: "wave"
+    enemy: "ace_stalker"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: -4.0, y: 1.0 }
+    behavior: "tail_stalker"
+    fireRate: 1.2
+
   - atDistance: 11200
     type: "wave"
     enemy: "interceptor"
@@ -503,6 +566,15 @@ timeline:
     position: { x: 0, y: 0 }
     scale: 1.65
     rotationSpeed: 0.9
+
+  - atDistance: 12700
+    type: "wave"
+    enemy: "doom_triangle"
+    formation: "flanking"
+    count: 2
+    spawnOffset: { x: 0, y: 0.8 }
+    behavior: "track_strafe"
+    fireRate: 1.1
 
   - atDistance: 12840
     type: "wave"

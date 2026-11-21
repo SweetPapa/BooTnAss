@@ -91,6 +91,15 @@ timeline:
     scale: 1.1
     rotationSpeed: 0.0
 
+  - atDistance: 1620
+    type: "wave"
+    enemy: "boot_ship"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "track_strafe"
+    fireRate: 1.1
+
   - atDistance: 1720
     type: "wave"
     enemy: "turret"
@@ -174,6 +183,15 @@ timeline:
     position: { x: 0, y: 0 }
     scale: 1.3
     rotationSpeed: 1.45
+
+  - atDistance: 3530
+    type: "wave"
+    enemy: "centipede"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "centipede_slither"
+    fireRate: 1.2
 
   - atDistance: 3620
     type: "wave"
@@ -259,8 +277,17 @@ timeline:
     formation: "flanking"
     count: 11
     spawnOffset: { x: 0, y: 0.5 }
-    behavior: "swoop_pass"
+    behavior: "rear_entry"
     fireRate: 1.45
+
+  - atDistance: 5760
+    type: "wave"
+    enemy: "doom_triangle"
+    formation: "flanking"
+    count: 2
+    spawnOffset: { x: 0, y: 1.0 }
+    behavior: "track_strafe"
+    fireRate: 1.15
 
   - atDistance: 5900
     type: "obstacle"
@@ -291,6 +318,15 @@ timeline:
     position: { x: 0, y: 0.6 }
     scale: 1.1
     rotationSpeed: 1.6
+
+  - atDistance: 6780
+    type: "wave"
+    enemy: "ace_stalker"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 4.5, y: 0.8 }
+    behavior: "tail_stalker"
+    fireRate: 1.25
 
   - atDistance: 6900
     type: "wave"
@@ -350,6 +386,15 @@ timeline:
     position: { x: 4.5, y: 0 }
     scale: 1.0
     rotationSpeed: 0.0
+
+  - atDistance: 8820
+    type: "wave"
+    enemy: "bomber_saucer"
+    formation: "flanking"
+    count: 2
+    spawnOffset: { x: 0, y: 0.6 }
+    behavior: "track_strafe"
+    fireRate: 1.15
 
   - atDistance: 8960
     type: "track_stunt"
@@ -413,8 +458,17 @@ timeline:
     formation: "flanking"
     count: 12
     spawnOffset: { x: 0, y: 0 }
-    behavior: "sine_weave"
+    behavior: "track_strafe"
     fireRate: 1.5
+
+  - atDistance: 11220
+    type: "wave"
+    enemy: "boot_ship"
+    formation: "flanking"
+    count: 2
+    spawnOffset: { x: 0, y: 0.4 }
+    behavior: "track_strafe"
+    fireRate: 1.15
 
   - atDistance: 11380
     type: "obstacle"
@@ -469,8 +523,17 @@ timeline:
     formation: "spiral"
     count: 14
     spawnOffset: { x: 0, y: 0 }
-    behavior: "swoop_pass"
+    behavior: "rear_entry"
     fireRate: 1.45
+
+  - atDistance: 13140
+    type: "wave"
+    enemy: "ace_stalker"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: -4.5, y: 1.0 }
+    behavior: "tail_stalker"
+    fireRate: 1.3
 
   - atDistance: 13320
     type: "obstacle"
@@ -498,8 +561,17 @@ timeline:
     formation: "v_shape"
     count: 10
     spawnOffset: { x: 0, y: 1.0 }
-    behavior: "swoop_pass"
+    behavior: "track_strafe"
     fireRate: 1.55
+
+  - atDistance: 14380
+    type: "wave"
+    enemy: "centipede"
+    formation: "line"
+    count: 1
+    spawnOffset: { x: 0, y: 0 }
+    behavior: "centipede_slither"
+    fireRate: 1.25
 
   - atDistance: 14560
     type: "obstacle"

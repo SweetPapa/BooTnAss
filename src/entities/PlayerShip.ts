@@ -34,8 +34,12 @@ export class PlayerShip {
 
   // Somersault Backflip + EMP pulse state!
   public somersaultTimer = 0;
-  private somersaultDuration = 0.65;
+  private somersaultDuration = 0.82;
   private somersaultCooldown = 0;
+
+  public get somersaultProgress01(): number {
+    return this.somersaultTimer > 0 ? 1 - this.somersaultTimer / this.somersaultDuration : 0;
+  }
 
   // Weapon upgrades & Smart Nova Bombs!
   public weaponMode: 'twin' | 'spread' | 'gatling' = 'twin';
@@ -485,12 +489,12 @@ export class PlayerShip {
   }
 
   public triggerSomersault(): boolean {
-    if (this.somersaultTimer > 0 || this.barrelRollTimer > 0 || this.somersaultCooldown > 0 || this.boostMeter < 30) {
+    if (this.somersaultTimer > 0 || this.barrelRollTimer > 0 || this.somersaultCooldown > 0 || this.boostMeter < 20) {
       return false;
     }
     this.somersaultTimer = this.somersaultDuration;
-    this.somersaultCooldown = 2.0;
-    this.boostMeter = Math.max(0, this.boostMeter - 30);
+    this.somersaultCooldown = 1.4;
+    this.boostMeter = Math.max(0, this.boostMeter - 20);
     return true;
   }
 
@@ -632,10 +636,12 @@ export class PlayerShip {
       this.deflectBubble.rotation.z += dt * 7;
     } else if (this.somersaultTimer > 0) {
       const p = 1 - this.somersaultTimer / this.somersaultDuration;
+      // Full heroic 360-degree vertical loop-over backflip!
       extraPitch = p * Math.PI * 2;
-      this.root.position.y += Math.sin(p * Math.PI) * 2.2;
-      (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = Math.sin(p * Math.PI) * 0.82;
-      this.deflectBubble.rotation.x += dt * 12;
+      this.root.position.y += Math.sin(p * Math.PI) * 3.1;
+      this.root.position.z -= Math.sin(p * Math.PI * 2) * 1.8;
+      (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = Math.sin(p * Math.PI) * 0.85;
+      this.deflectBubble.rotation.x += dt * 14;
     } else {
       (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = 0;
     }
