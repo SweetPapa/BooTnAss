@@ -511,7 +511,7 @@ export class HUD {
         </div>
         <div class="desktop-status-corner">
           <span>${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB EDITION'} &nbsp;•&nbsp; F11 FULLSCREEN</span>
-          <span>v1.0.0 &nbsp;•&nbsp; SWEET PAPA TECHNOLOGIES</span>
+          <span>v1.1.0 &nbsp;•&nbsp; SWEET PAPA TECHNOLOGIES</span>
         </div>
       </div>
     `;
@@ -598,7 +598,7 @@ export class HUD {
         </div>
         <div class="desktop-status-corner">
           <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
-          <span>v1.0.0 &nbsp;•&nbsp; ${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB'}</span>
+          <span>v1.1.0 &nbsp;•&nbsp; ${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB'}</span>
         </div>
       </div>
     `;

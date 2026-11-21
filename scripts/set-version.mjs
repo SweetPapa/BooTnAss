@@ -30,4 +30,12 @@ let cargo = fs.readFileSync(cargoPath, 'utf8');
 cargo = cargo.replace(/^version\s*=\s*"[^"]*"/m, `version = "${version}"`);
 fs.writeFileSync(cargoPath, cargo);
 
+// 4. src/ui/HUD.ts version badges
+const hudPath = path.resolve('src/ui/HUD.ts');
+if (fs.existsSync(hudPath)) {
+  let hud = fs.readFileSync(hudPath, 'utf8');
+  hud = hud.replace(/v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?(?=\s*&nbsp;•)/g, `v${version}`);
+  fs.writeFileSync(hudPath, hud);
+}
+
 console.log(`[set-version] Synced version to ${version}`);
