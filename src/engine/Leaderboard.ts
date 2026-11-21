@@ -62,10 +62,21 @@ export class Leaderboard {
     return top10;
   }
 
-  public static computeCampaignRank(totalScore: number): 'S' | 'A' | 'B' | 'C' {
-    if (totalScore >= 45000) return 'S';
-    if (totalScore >= 25000) return 'A';
-    if (totalScore >= 12000) return 'B';
+  public static computeCampaignRank(
+    totalScore: number,
+    sectorRanks?: Array<'S' | 'A' | 'B' | 'C'>
+  ): 'S' | 'A' | 'B' | 'C' {
+    if (sectorRanks && sectorRanks.length > 0) {
+      const pts: Record<'S' | 'A' | 'B' | 'C', number> = { S: 4, A: 3, B: 2, C: 1 };
+      const avg = sectorRanks.reduce((acc, r) => acc + pts[r], 0) / sectorRanks.length;
+      if (avg >= 3.65) return 'S';
+      if (avg >= 2.65) return 'A';
+      if (avg >= 1.65) return 'B';
+      return 'C';
+    }
+    if (totalScore >= 250000) return 'S';
+    if (totalScore >= 140000) return 'A';
+    if (totalScore >= 60000) return 'B';
     return 'C';
   }
 }

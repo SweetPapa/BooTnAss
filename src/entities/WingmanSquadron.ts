@@ -97,7 +97,7 @@ export class WingmanSquadron {
   private readonly scene: THREE.Scene;
   private readonly ships: WingmanShip[] = [];
   private age = 0;
-  private pursuitSpawnTimer = 9.0;
+  private pursuitSpawnTimer = 14.0;
   private arrivalSalvoFired = false;
   private lastStuntActive = false;
   private readonly tmpCurve = { dx: 0, dy: 0 };
@@ -111,7 +111,7 @@ export class WingmanSquadron {
     this.clear();
     this.deployed = true;
     this.age = 0;
-    this.pursuitSpawnTimer = 10.5;
+    this.pursuitSpawnTimer = 14.0;
     this.arrivalSalvoFired = false;
     this.lastStuntActive = false;
 
@@ -428,11 +428,11 @@ export class WingmanSquadron {
     }
     this.lastStuntActive = stuntNow;
 
-    // Periodically send an enemy bogey (or spawn a fresh ambush interceptor!) to dogfight Blitz or Tank!
+    // Periodically send an enemy bogey to dogfight Blitz or Tank — spaced out cleanly (>= 22s between rescue events!)
     const aliveAllies = this.ships.filter((s) => s.alive && !s.ejected);
     const unchasedAllies = aliveAllies.filter((s) => !s.pursuer || !s.pursuer.alive);
     const activePursuits = aliveAllies.length - unchasedAllies.length;
-    if (unchasedAllies.length > 0 && activePursuits < 2 && !boss.dying) {
+    if (unchasedAllies.length > 0 && activePursuits === 0 && !boss.dying) {
       this.pursuitSpawnTimer -= dt;
       if (this.pursuitSpawnTimer <= 0) {
         const targetAlly = unchasedAllies[Math.floor(Math.random() * unchasedAllies.length)];
@@ -457,7 +457,7 @@ export class WingmanSquadron {
         chaser.pursuingAlly = targetAlly.id;
         targetAlly.pursuer = chaser;
         targetAlly.helpCalledForPursuer = false;
-        this.pursuitSpawnTimer = activePursuits === 0 ? 8.8 : 13.5;
+        this.pursuitSpawnTimer = 22.0 + Math.random() * 5.0;
       }
     }
 
@@ -639,6 +639,7 @@ export class WingmanSquadron {
         if (ch.mesh.position.z > -46) {
           if (!s.helpCalledForPursuer) {
             s.helpCalledForPursuer = true;
+            this.pursuitSpawnTimer = Math.max(this.pursuitSpawnTimer, 22.0);
             this.triggerRoll(s, 0.56);
             cb.onNeedHelp(s.id, s.callsign);
           }
@@ -896,6 +897,7 @@ export class WingmanSquadron {
 
     savedShip.pursuer = null;
     savedShip.helpCalledForPursuer = false;
+    this.pursuitSpawnTimer = Math.max(this.pursuitSpawnTimer, 20.0);
     savedShip.hp = Math.min(savedShip.maxHp, savedShip.hp + 28);
     savedShip.healFlashTimer = 0.85;
     // Celebratory barrel roll & boost surge after getting rescued!

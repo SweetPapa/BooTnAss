@@ -335,11 +335,13 @@ jobs:
           | **Linux (Universal)** | \`BOOT-N-ASS-$VERSION-linux-x86_64.AppImage\` | Verify via \`SHA256SUMS.txt\` |
 
           ### Highlights
-          - **3 High-Octane Neon Sectors** with dynamic curved rail tracks, cosmic landmarks, racing slalom gates, and tactical enemy formations.
-          - **3 Distinct Multi-Phase Bosses**: Aegis Dreadnought (shielded wing turrets + laser sweeps), Octa-Core Sentinel (prism shields shattered by barrel-roll deflections + rotating X-cross laser cage), and Solaris Leviathan (7-segment weaving cyber-dragon).
-          - **Full Animated Cutscenes, Original Synthwave Soundtrack & 65+ Voice Lines** — including dramatic pilot death spirals, 3D ship wreckage explosions, and multi-stage boss meltdowns.
-          - **Zorp's Hangar Meta-Progression**, 3 difficulty modes (**Rookie**, **Ace**, **Maximum Boot-N-Ass**), S-Rank target checklist, and Local Arcade Leaderboard.
-          - **Native Desktop Polish**: 100% offline bundled fonts & assets, \`F11\` fullscreen toggle, universal Bluetooth/USB gamepad & rumble support.
+          - **3x Longer High-Octane Neon Space-Coaster Sectors** with 360° vertical loops, gravity corkscrews, hyper-plunge dives, high-G S-chicanes, turbo streak chains, prism shield shards, and overclock warp gates.
+          - **Allied Wingman Squadron (\`BLITZ\` & \`TANK\`)** with live in-game arrival cutscene, autonomous ace flight maneuvers, obstacle dodging, rescue dogfights, and voiced radio banter.
+          - **Dynamic Enemy Roster & Tailgater Counterplay** — Cyber-Centipedes, Flying Triangles of Doom, Giant Boot Ships, Disco Saucers, rear-entry patrols, and Rival Tailgaters countered via Somersault Backflips (\`R / Y\`) and Airbrakes (\`C / LB+RB\`).
+          - **3 Tuned Multi-Phase Bosses**: Aegis Dreadnought (shielded wing turrets + phase-shift laser sweep), Octa-Core Sentinel (prism shields shattered by barrel-roll deflections + rotating X-cross laser cage), and Solaris Leviathan (7-segment weaving cyber-dragon).
+          - **9 Full Animated Cutscenes, Gapless Synthwave Soundtrack & 100+ Voice Lines** — including the new Sector Clear thumbs-up, 3-part Grand Finale (\`hyperspace-escape\` → \`victory-ending\` → \`frontier-liberated\`), pilot death spirals, and multi-stage boss meltdowns.
+          - **Real Mid-Sector (50%) & Boss Checkpoints**, Zorp's Hangar Meta-Progression, 3 difficulty tiers (**Rookie**, **Ace**, **Maximum Boot-N-Ass**), S-Rank checklist, and a Gamepad-Driven 3-Letter Arcade Initials Leaderboard.
+          - **Native Desktop Polish**: 100% offline bundled fonts & assets, \`F11\` fullscreen, Auto-Fire (\`T\`), full controller sensitivity/deadzone/rumble/invert-Y tuning, and dynamic HDR blast lighting.
 
           ---
           Verify downloads with \`SHA256SUMS.txt\`.

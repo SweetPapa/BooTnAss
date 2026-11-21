@@ -237,26 +237,31 @@ export class CollisionSystem {
           cb.onCrystalDestroyed(obs, obs.mesh.position.clone());
         }
       } else if (obs.kind === 'monolith_pillar' && obs.halfExtents) {
+        if (obs.triggered) continue;
         const dx = Math.abs(playerPos.x - pos.x);
         if (dx < obs.halfExtents.x + 1.15) {
+          obs.triggered = true;
           const dmg = Math.round(26 * dmgMult);
           if (player.takeDamage(dmg)) {
             cb.onPlayerDamaged(dmg, playerPos, 'obstacle');
           }
         }
       } else if (obs.kind === 'arch_gate') {
+        if (obs.triggered) continue;
         const dx = Math.abs(playerPos.x - pos.x);
         const dy = playerPos.y - pos.y;
         const gap = 3.8 * obs.scale;
         const hitPillar = dx > gap - 0.7 * obs.scale && dx < gap + 2.6 * obs.scale;
         const hitTop = dx < gap + 2.6 * obs.scale && dy > 3.1 * obs.scale && dy < 6.0 * obs.scale;
         if (hitPillar || hitTop) {
+          obs.triggered = true;
           const dmg = Math.round(24 * dmgMult);
           if (player.takeDamage(dmg)) {
             cb.onPlayerDamaged(dmg, playerPos, 'obstacle');
           }
         }
       } else if (obs.kind === 'laser_bar' && obs.halfExtents) {
+        if (obs.triggered) continue;
         const rx = playerPos.x - pos.x;
         const ry = playerPos.y - pos.y;
         const cos = Math.cos(-obs.mesh.rotation.z);
@@ -264,12 +269,14 @@ export class CollisionSystem {
         const lx = rx * cos - ry * sin;
         const ly = rx * sin + ry * cos;
         if (Math.abs(lx) < obs.halfExtents.x + 0.9 && Math.abs(ly) < obs.halfExtents.y + 0.75) {
+          obs.triggered = true;
           const dmg = Math.round(26 * dmgMult);
           if (player.takeDamage(dmg)) {
             cb.onPlayerDamaged(dmg, playerPos, 'beam');
           }
         }
       } else if (obs.kind === 'spinner_cross' && obs.halfExtents) {
+        if (obs.triggered) continue;
         const rx = playerPos.x - pos.x;
         const ry = playerPos.y - pos.y;
         const cos = Math.cos(-obs.mesh.rotation.z);
@@ -279,6 +286,7 @@ export class CollisionSystem {
         const hitBlade1 = Math.abs(lx) < obs.halfExtents.x + 0.8 && Math.abs(ly) < obs.halfExtents.y + 0.65;
         const hitBlade2 = Math.abs(ly) < obs.halfExtents.x + 0.8 && Math.abs(lx) < obs.halfExtents.y + 0.65;
         if (hitBlade1 || hitBlade2) {
+          obs.triggered = true;
           const dmg = Math.round(26 * dmgMult);
           if (player.takeDamage(dmg)) {
             cb.onPlayerDamaged(dmg, playerPos, 'beam');

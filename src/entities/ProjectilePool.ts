@@ -37,18 +37,50 @@ export class ProjectilePool {
   private readonly playerMesh: THREE.InstancedMesh;
   private readonly missileMesh: THREE.InstancedMesh;
   private readonly enemyMesh: THREE.InstancedMesh;
+  private readonly playerAlphaAttr: THREE.InstancedBufferAttribute;
+  private readonly missileAlphaAttr: THREE.InstancedBufferAttribute;
+  private readonly enemyAlphaAttr: THREE.InstancedBufferAttribute;
   private readonly dummy = new THREE.Object3D();
   private readonly tmpDir = new THREE.Vector3();
   private readonly tmpTargetPos = new THREE.Vector3();
+  private readonly defaultCamPos = new THREE.Vector3(0, 2.2, 14);
   private readonly up = new THREE.Vector3(0, 1, 0);
+
+  private createFadableInstancedMat(color: THREE.Color | number): THREE.MeshBasicMaterial {
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    mat.customProgramCacheKey = () => 'instanced_cam_fade_v1';
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nattribute float instanceOpacity;\nvarying float vInstanceOpacity;'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\nvInstanceOpacity = instanceOpacity;'
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vInstanceOpacity;')
+        .replace(
+          '#include <color_fragment>',
+          '#include <color_fragment>\ndiffuseColor.a *= vInstanceOpacity;'
+        );
+    };
+    return mat;
+  }
 
   constructor(scene: THREE.Scene) {
     // Player plasma bolt geometry (elongated glowing rod)
     const boltGeo = new THREE.BoxGeometry(0.18, 0.18, 2.5);
-    const boltMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      toneMapped: false,
-    });
+    this.playerAlphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(this.maxPlayerBolts), 1);
+    this.playerAlphaAttr.setUsage(THREE.DynamicDrawUsage);
+    boltGeo.setAttribute('instanceOpacity', this.playerAlphaAttr);
+    const boltMat = this.createFadableInstancedMat(0xffffff);
     this.playerMesh = new THREE.InstancedMesh(boltGeo, boltMat, this.maxPlayerBolts);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.playerMesh.frustumCulled = false;
@@ -56,20 +88,20 @@ export class ProjectilePool {
     // Homing missile geometry (glowing golden diamond)
     const missileGeo = new THREE.OctahedronGeometry(0.45, 0);
     missileGeo.scale(0.85, 0.85, 2.2);
-    const missileMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xffd447).multiplyScalar(2.8),
-      toneMapped: false,
-    });
+    this.missileAlphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(this.maxMissiles), 1);
+    this.missileAlphaAttr.setUsage(THREE.DynamicDrawUsage);
+    missileGeo.setAttribute('instanceOpacity', this.missileAlphaAttr);
+    const missileMat = this.createFadableInstancedMat(new THREE.Color(0xffd447).multiplyScalar(2.8));
     this.missileMesh = new THREE.InstancedMesh(missileGeo, missileMat, this.maxMissiles);
     this.missileMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.missileMesh.frustumCulled = false;
 
-    // Enemy plasma orb (large, ultra-readable fiery crimson-orange glowing sphere!)
+    // Enemy plasma orb (readable fiery crimson-orange glowing sphere with smooth near-camera fade!)
     const enemyGeo = new THREE.IcosahedronGeometry(0.76, 1);
-    const enemyMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xff3818).multiplyScalar(2.4),
-      toneMapped: false,
-    });
+    this.enemyAlphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(this.maxEnemyShots), 1);
+    this.enemyAlphaAttr.setUsage(THREE.DynamicDrawUsage);
+    enemyGeo.setAttribute('instanceOpacity', this.enemyAlphaAttr);
+    const enemyMat = this.createFadableInstancedMat(new THREE.Color(0xff3818).multiplyScalar(2.4));
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, this.maxEnemyShots);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.enemyMesh.frustumCulled = false;
@@ -80,12 +112,15 @@ export class ProjectilePool {
     for (let i = 0; i < this.maxPlayerBolts; i++) {
       this.playerMesh.setMatrixAt(i, zero);
       this.playerMesh.setColorAt(i, cyan);
+      this.playerAlphaAttr.setX(i, 0);
     }
     for (let i = 0; i < this.maxMissiles; i++) {
       this.missileMesh.setMatrixAt(i, zero);
+      this.missileAlphaAttr.setX(i, 0);
     }
     for (let i = 0; i < this.maxEnemyShots; i++) {
       this.enemyMesh.setMatrixAt(i, zero);
+      this.enemyAlphaAttr.setX(i, 0);
     }
 
     scene.add(this.playerMesh, this.missileMesh, this.enemyMesh);
@@ -170,7 +205,12 @@ export class ProjectilePool {
     });
   }
 
-  public update(dt: number, onMissileTrail?: (pos: THREE.Vector3) => void): void {
+  public update(
+    dt: number,
+    cameraPos?: THREE.Vector3,
+    onMissileTrail?: (pos: THREE.Vector3) => void
+  ): void {
+    const camPos = cameraPos ?? this.defaultCamPos;
     let pIdx = 0;
     let mIdx = 0;
     let eIdx = 0;
@@ -189,8 +229,8 @@ export class ProjectilePool {
       }
 
       proj.life -= dt;
-      // Cull before camera near-plane frustum (camera z=14, near+1.5 => cull past z=10.5)
-      if (proj.life <= 0 || proj.pos.z < -260 || proj.pos.z > 10.5) {
+      // Cull once expired, deep out of range, or well past the player near the camera lens!
+      if (proj.life <= 0 || proj.pos.z < -260 || proj.pos.z > 8.5) {
         proj.active = false;
         this.projectiles.splice(i, 1);
         continue;
@@ -215,6 +255,17 @@ export class ProjectilePool {
 
       proj.pos.addScaledVector(proj.vel, dt);
 
+      // Near-camera anti-blinding: smoothly fade opacity from 1 -> 0 across 12..6 units and cull/hide at < 6 units!
+      const camDist = proj.pos.distanceTo(camPos);
+      if (camDist < 6.0) {
+        if (proj.kind === 'enemy_plasma' && proj.pos.z > 2.5) {
+          proj.active = false;
+          this.projectiles.splice(i, 1);
+        }
+        continue;
+      }
+      const camOpacity = camDist >= 12.0 ? 1.0 : THREE.MathUtils.clamp((camDist - 6.0) / 6.0, 0, 1);
+
       if (proj.kind === 'player_bolt' || proj.kind === 'reflected_bolt' || proj.kind === 'ally_bolt') {
         if (pIdx < this.maxPlayerBolts) {
           this.dummy.position.copy(proj.pos);
@@ -233,6 +284,7 @@ export class ProjectilePool {
                   : blitzColor
                 : cyanColor;
           this.playerMesh.setColorAt(pIdx, col);
+          this.playerAlphaAttr.setX(pIdx, camOpacity);
           pIdx++;
         }
       } else if (proj.kind === 'player_missile') {
@@ -243,16 +295,18 @@ export class ProjectilePool {
           this.dummy.scale.set(1, 1, 1);
           this.dummy.updateMatrix();
           this.missileMesh.setMatrixAt(mIdx, this.dummy.matrix);
+          this.missileAlphaAttr.setX(mIdx, camOpacity);
           mIdx++;
         }
       } else if (proj.kind === 'enemy_plasma') {
         if (eIdx < this.maxEnemyShots) {
           this.dummy.position.copy(proj.pos);
           this.dummy.rotation.set(proj.life * 6, proj.life * 8, 0);
-          const s = proj.radius / 0.55;
+          const s = Math.min(proj.radius / 0.58, 1.85);
           this.dummy.scale.set(s, s, s);
           this.dummy.updateMatrix();
           this.enemyMesh.setMatrixAt(eIdx, this.dummy.matrix);
+          this.enemyAlphaAttr.setX(eIdx, camOpacity);
           eIdx++;
         }
       }
@@ -260,25 +314,49 @@ export class ProjectilePool {
 
     // Zero unused instances
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = pIdx; i < this.maxPlayerBolts; i++) this.playerMesh.setMatrixAt(i, zero);
-    for (let i = mIdx; i < this.maxMissiles; i++) this.missileMesh.setMatrixAt(i, zero);
-    for (let i = eIdx; i < this.maxEnemyShots; i++) this.enemyMesh.setMatrixAt(i, zero);
+    for (let i = pIdx; i < this.maxPlayerBolts; i++) {
+      this.playerMesh.setMatrixAt(i, zero);
+      this.playerAlphaAttr.setX(i, 0);
+    }
+    for (let i = mIdx; i < this.maxMissiles; i++) {
+      this.missileMesh.setMatrixAt(i, zero);
+      this.missileAlphaAttr.setX(i, 0);
+    }
+    for (let i = eIdx; i < this.maxEnemyShots; i++) {
+      this.enemyMesh.setMatrixAt(i, zero);
+      this.enemyAlphaAttr.setX(i, 0);
+    }
 
     this.playerMesh.instanceMatrix.needsUpdate = true;
     if (this.playerMesh.instanceColor) this.playerMesh.instanceColor.needsUpdate = true;
+    this.playerAlphaAttr.needsUpdate = true;
     this.missileMesh.instanceMatrix.needsUpdate = true;
+    this.missileAlphaAttr.needsUpdate = true;
     this.enemyMesh.instanceMatrix.needsUpdate = true;
+    this.enemyAlphaAttr.needsUpdate = true;
     void this.up;
   }
 
   public clear(): void {
     this.projectiles.length = 0;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < this.maxPlayerBolts; i++) this.playerMesh.setMatrixAt(i, zero);
-    for (let i = 0; i < this.maxMissiles; i++) this.missileMesh.setMatrixAt(i, zero);
-    for (let i = 0; i < this.maxEnemyShots; i++) this.enemyMesh.setMatrixAt(i, zero);
+    for (let i = 0; i < this.maxPlayerBolts; i++) {
+      this.playerMesh.setMatrixAt(i, zero);
+      this.playerAlphaAttr.setX(i, 0);
+    }
+    for (let i = 0; i < this.maxMissiles; i++) {
+      this.missileMesh.setMatrixAt(i, zero);
+      this.missileAlphaAttr.setX(i, 0);
+    }
+    for (let i = 0; i < this.maxEnemyShots; i++) {
+      this.enemyMesh.setMatrixAt(i, zero);
+      this.enemyAlphaAttr.setX(i, 0);
+    }
     this.playerMesh.instanceMatrix.needsUpdate = true;
+    this.playerAlphaAttr.needsUpdate = true;
     this.missileMesh.instanceMatrix.needsUpdate = true;
+    this.missileAlphaAttr.needsUpdate = true;
     this.enemyMesh.instanceMatrix.needsUpdate = true;
+    this.enemyAlphaAttr.needsUpdate = true;
   }
 }

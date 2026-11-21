@@ -33,10 +33,11 @@ export class AudioSynth {
   private bgmBaseVolume = 0.42;
   private bgmDuckFactor = 0.72; // Gentle ducking during gameplay so music stays punchy!
 
-  // Single-channel voice queue with priority (Boss > Wingman > System), 1.5s min gap, 12s per-line cooldown
+  // Single-channel voice queue with priority (Boss > Wingman > System), 1.5s min gap, 12s+ per-line cooldown
   private voCache = new Map<string, AudioBuffer>();
   private currentVoSource: AudioBufferSourceNode | null = null;
   private voPlaying = false;
+  private currentVoPriority: VoicePriority = 1;
   private voLastEndedAt = 0;
   private voPerLineCooldown = new Map<string, number>();
   private voQueue: QueuedVoiceLine | null = null;
@@ -44,6 +45,10 @@ export class AudioSynth {
 
   public isVoPlaying(): boolean {
     return this.voPlaying;
+  }
+
+  public isBossVoPlaying(): boolean {
+    return this.voPlaying && this.currentVoPriority >= 3;
   }
 
   public isLineOnCooldown(id: string, cooldownMs = 12000): boolean {
@@ -56,26 +61,50 @@ export class AudioSynth {
    * Enqueues a voice line onto the single-channel voice bus.
    * Enforces:
    * - Priority: Boss (3) > Wingman (2) > System (1)
+   * - Strict Boss Voice Priority: suppresses wingman/announcer lines while a boss is speaking!
    * - Minimum 1.5s gap between spoken clips
-   * - Per-line 12s cooldown so the same clip never loops back-to-back
+   * - Configurable per-line cooldown (default 12s; 25s for repetitive callouts)
    */
   public enqueueVO(
     id: string,
     priority: VoicePriority,
     radioFilter = true,
     onStart?: () => void,
-    bypassCooldown = false
+    bypassCooldown = false,
+    cooldownMs = 12000
   ): boolean {
     if (this.muted) return false;
-    if (!bypassCooldown && this.isLineOnCooldown(id, 12000)) return false;
+    if (!bypassCooldown && this.isLineOnCooldown(id, cooldownMs)) return false;
+
+    // Strict Boss Voice Priority: suppress non-boss lines whenever a boss is speaking!
+    if (this.isBossVoPlaying() && priority < 3) {
+      return false;
+    }
 
     const now = performance.now();
+
+    // Boss lines (priority 3) cut through routine wingman/system chatter cleanly!
+    if (priority >= 3) {
+      if (this.voQueue && this.voQueue.priority < 3) {
+        this.voQueue = null;
+      }
+      if (this.voPlaying && this.currentVoPriority < 3) {
+        this.stopVO();
+      }
+      if (!this.voPlaying) {
+        this.voPerLineCooldown.set(id, now);
+        if (onStart) onStart();
+        void this.playVO(id, radioFilter, true, 3);
+        return true;
+      }
+    }
+
     const gapRemaining = Math.max(0, 1500 - (now - this.voLastEndedAt));
 
     if (!this.voPlaying && gapRemaining === 0) {
       this.voPerLineCooldown.set(id, now);
       if (onStart) onStart();
-      void this.playVO(id, radioFilter, true);
+      void this.playVO(id, radioFilter, true, priority);
       return true;
     }
 
@@ -102,7 +131,7 @@ export class AudioSynth {
       if (this.isLineOnCooldown(next.id, 12000)) return;
       this.voPerLineCooldown.set(next.id, performance.now());
       if (next.onStart) next.onStart();
-      void this.playVO(next.id, next.radioFilter, true);
+      void this.playVO(next.id, next.radioFilter, true, next.priority);
     }, delayMs);
   }
 
@@ -779,7 +808,7 @@ export class AudioSynth {
     });
   }
 
-  public playPlayerHit(): void {
+  public playPlayerHit(isHazard = false): void {
     if (!this.ctx || !this.masterGain || this.muted) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -793,6 +822,19 @@ export class AudioSynth {
     g.connect(this.masterGain);
     osc.start(now);
     osc.stop(now + 0.26);
+
+    // Crisp electric shield-impact resonance (clearly signals shield hit + 0.75s i-frames!)
+    const shieldOsc = this.ctx.createOscillator();
+    const sg = this.ctx.createGain();
+    shieldOsc.type = 'triangle';
+    shieldOsc.frequency.setValueAtTime(isHazard ? 940 : 720, now);
+    shieldOsc.frequency.exponentialRampToValueAtTime(isHazard ? 210 : 180, now + 0.19);
+    sg.gain.setValueAtTime(isHazard ? 0.26 : 0.18, now);
+    sg.gain.exponentialRampToValueAtTime(0.001, now + 0.21);
+    shieldOsc.connect(sg);
+    sg.connect(this.masterGain);
+    shieldOsc.start(now);
+    shieldOsc.stop(now + 0.22);
   }
 
   public playBoost(): void {
@@ -989,7 +1031,12 @@ export class AudioSynth {
    * Plays a pre-generated home-lab Kokoro TTS voiceover MP3 with optional sci-fi radio bandpass filter.
    * Never cuts off or plays over an active voiceover unless `forceInterrupt` is true!
    */
-  public async playVO(id: string, radioFilter = true, forceInterrupt = false): Promise<boolean> {
+  public async playVO(
+    id: string,
+    radioFilter = true,
+    forceInterrupt = false,
+    priority: VoicePriority = 2
+  ): Promise<boolean> {
     if (this.muted) return false;
     if (this.voPlaying && !forceInterrupt) return false;
 
@@ -998,6 +1045,7 @@ export class AudioSynth {
 
     // Reserve playback slot immediately so concurrent triggers during fetch don't overlap!
     this.voPlaying = true;
+    this.currentVoPriority = priority;
 
     try {
       let buffer = this.voCache.get(id);
@@ -1005,6 +1053,7 @@ export class AudioSynth {
         const res = await fetch(`/assets/vo/${id}.mp3`);
         if (!res.ok) {
           this.voPlaying = false;
+          this.currentVoPriority = 1;
           return false;
         }
         const arr = await res.arrayBuffer();
@@ -1044,6 +1093,7 @@ export class AudioSynth {
         if (this.currentVoSource === src) {
           this.currentVoSource = null;
           this.voPlaying = false;
+          this.currentVoPriority = 1;
           this.voLastEndedAt = performance.now();
           this.updateBgmDucking();
           if (this.voQueue) {
@@ -1055,6 +1105,7 @@ export class AudioSynth {
       return true;
     } catch {
       this.voPlaying = false;
+      this.currentVoPriority = 1;
       this.updateBgmDucking();
       return false;
     }
@@ -1063,12 +1114,13 @@ export class AudioSynth {
   private lastAnnouncerAt = 0;
 
   /**
-   * Plays short punchy arcade announcer stingers ("TRIPLE KILL!", "MEGA KILL!") cleanly without interrupting story dialogue.
+   * Plays short punchy arcade announcer stingers ("MEGA KILL!", "RAMPAGE!") cleanly.
+   * Strictly enforces a 15-second cooldown and NEVER talks over active wingman/boss/commander dialogue!
    */
   public async playAnnouncerStinger(id: string): Promise<void> {
-    if (this.muted) return;
+    if (this.muted || this.voPlaying) return;
     const now = performance.now();
-    if (now - this.lastAnnouncerAt < 1800) return;
+    if (now - this.lastAnnouncerAt < 15000) return;
     this.lastAnnouncerAt = now;
     this.unlock();
     if (!this.ctx || !this.masterGain) return;
@@ -1108,6 +1160,7 @@ export class AudioSynth {
       this.currentVoSource = null;
     }
     this.voPlaying = false;
+    this.currentVoPriority = 1;
     this.updateBgmDucking();
   }
 }

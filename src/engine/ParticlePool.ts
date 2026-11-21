@@ -50,7 +50,9 @@ export class ParticlePool {
   private readonly maxParticles = 1800;
   private readonly particles: Particle[] = [];
   private readonly mesh: THREE.InstancedMesh;
+  private readonly particleAlphaAttr: THREE.InstancedBufferAttribute;
   private readonly dummy = new THREE.Object3D();
+  private readonly defaultCamPos = new THREE.Vector3(0, 2.2, 14);
   private readonly scene: THREE.Scene;
   private readonly shockwaves: Shockwave[] = [];
   private readonly fireballs: FireballCore[] = [];
@@ -64,10 +66,34 @@ export class ParticlePool {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     const geo = new THREE.OctahedronGeometry(0.32, 0);
+    this.particleAlphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(this.maxParticles), 1);
+    this.particleAlphaAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('instanceOpacity', this.particleAlphaAttr);
+
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
+      transparent: true,
+      depthWrite: false,
       toneMapped: false,
     });
+    mat.customProgramCacheKey = () => 'instanced_cam_fade_v1';
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nattribute float instanceOpacity;\nvarying float vInstanceOpacity;'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\nvInstanceOpacity = instanceOpacity;'
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vInstanceOpacity;')
+        .replace(
+          '#include <color_fragment>',
+          '#include <color_fragment>\ndiffuseColor.a *= vInstanceOpacity;'
+        );
+    };
 
     this.mesh = new THREE.InstancedMesh(geo, mat, this.maxParticles);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -91,12 +117,15 @@ export class ParticlePool {
       });
       this.mesh.setMatrixAt(i, zeroMat);
       this.mesh.setColorAt(i, white);
+      this.particleAlphaAttr.setX(i, 0);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.particleAlphaAttr.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
     this.scene.add(this.mesh);
 
-    this.ringGeo = new THREE.RingGeometry(0.8, 1.0, 32);
+    // Crisp sleek shockwave ring band so rings look razor-sharp without opaque polygon walls
+    this.ringGeo = new THREE.RingGeometry(0.86, 1.0, 32);
 
     // 24 pooled HDR fireball cores (zero allocation during chaotic battles!)
     const fbGeo = new THREE.IcosahedronGeometry(1.0, 1);
@@ -187,20 +216,21 @@ export class ParticlePool {
     }
   }
 
-  public spawnFireball(origin: THREE.Vector3, hexColor: number, maxScale = 3.2, duration = 0.24): void {
-    if (origin.z > 8.2) return;
+  public spawnFireball(origin: THREE.Vector3, hexColor: number, maxScale = 2.8, duration = 0.24): void {
+    if (origin.z > 6.5) return;
     const fb = this.fireballs[this.fbCursor];
     this.fbCursor = (this.fbCursor + 1) % this.fireballs.length;
     fb.active = true;
     fb.life = duration;
     fb.maxLife = duration;
-    fb.maxScale = maxScale;
+    // Cap explosion sphere max scale so fireballs NEVER fill the viewport!
+    fb.maxScale = Math.min(maxScale, 4.0);
     fb.baseColor.setHex(hexColor);
     fb.mesh.position.copy(origin);
     fb.mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
     fb.mesh.scale.setScalar(0.45);
     fb.mesh.visible = true;
-    fb.mat.opacity = 0.95;
+    fb.mat.opacity = 0.9;
   }
 
   public flashLight(origin: THREE.Vector3, hexColor: number, intensity = 26, duration = 0.26): void {
@@ -224,29 +254,29 @@ export class ParticlePool {
     primaryHex = 0xff5500,
     secondaryHex = 0xffd447
   ): void {
-    if (origin.z > 9.0) return;
+    if (origin.z > 7.0) return;
 
     if (tier === 'small') {
-      this.spawnFireball(origin, primaryHex, 2.5, 0.21);
-      this.burst(origin, 18, primaryHex, 23, 1.05, 0.52, 1.4);
-      this.burst(origin, 10, secondaryHex, 28, 0.72, 0.42, 2.0);
-      this.spawnShockwave(origin, primaryHex, 6.8, 0.28);
+      this.spawnFireball(origin, primaryHex, 2.0, 0.2);
+      this.burst(origin, 18, primaryHex, 23, 1.0, 0.5, 1.4);
+      this.burst(origin, 10, secondaryHex, 28, 0.7, 0.4, 2.0);
+      this.spawnShockwave(origin, primaryHex, 6.0, 0.28);
       this.flashLight(origin, primaryHex, 20, 0.22);
     } else if (tier === 'medium') {
-      this.spawnFireball(origin, secondaryHex, 3.6, 0.26);
-      this.burst(origin, 26, primaryHex, 27, 1.25, 0.65, 1.5);
-      this.burst(origin, 16, secondaryHex, 34, 0.85, 0.52, 2.2);
-      this.spawnShockwave(origin, primaryHex, 10.5, 0.36);
-      this.spawnShockwave(origin, secondaryHex, 8.0, 0.28, true);
+      this.spawnFireball(origin, secondaryHex, 2.8, 0.25);
+      this.burst(origin, 26, primaryHex, 27, 1.2, 0.62, 1.5);
+      this.burst(origin, 16, secondaryHex, 34, 0.82, 0.5, 2.2);
+      this.spawnShockwave(origin, primaryHex, 9.0, 0.34);
+      this.spawnShockwave(origin, secondaryHex, 7.2, 0.26, true);
       this.flashLight(origin, secondaryHex, 32, 0.28);
     } else {
       // MEGA FIREWORK DETONATION (Boot Ship, Doom Triangle, Centipede, Saucer, Tailgater, Boss Parts!)
-      this.spawnFireball(origin, 0xffffff, 4.8, 0.3);
-      this.burst(origin, 36, primaryHex, 33, 1.4, 0.8, 1.6);
-      this.burst(origin, 24, secondaryHex, 40, 1.0, 0.65, 2.4);
-      this.burst(origin, 14, 0x00f0ff, 36, 0.85, 0.55, 2.1);
-      this.spawnShockwave(origin, secondaryHex, 15.5, 0.44);
-      this.spawnShockwave(origin, primaryHex, 12.5, 0.38, true);
+      this.spawnFireball(origin, 0xffffff, 3.6, 0.28);
+      this.burst(origin, 36, primaryHex, 33, 1.35, 0.78, 1.6);
+      this.burst(origin, 24, secondaryHex, 40, 0.95, 0.62, 2.4);
+      this.burst(origin, 14, 0x00f0ff, 36, 0.82, 0.52, 2.1);
+      this.spawnShockwave(origin, secondaryHex, 12.5, 0.42);
+      this.spawnShockwave(origin, primaryHex, 10.2, 0.36, true);
       this.flashLight(origin, secondaryHex, 46, 0.34);
 
       // Schedule 2 rapid secondary firework sub-pops for extra arcade spectacle!
@@ -260,7 +290,7 @@ export class ParticlePool {
           delay: 0.085 * (k + 1),
           pos: origin.clone().add(offset),
           colorHex: k === 0 ? primaryHex : secondaryHex,
-          scale: 2.6,
+          scale: 2.1,
         });
       }
     }
@@ -283,16 +313,16 @@ export class ParticlePool {
   public spawnShockwave(
     origin: THREE.Vector3,
     hexColor: number,
-    maxScale = 14,
-    duration = 0.55,
+    maxScale = 12,
+    duration = 0.5,
     tilted = false
   ): void {
-    // Clamp shockwave away from camera near-plane frustum (camera z=14)
-    if (origin.z > 9.2) return;
+    // Prevent shockwaves spawning inside camera near-plane frustum
+    if (origin.z > 6.5) return;
     const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(hexColor).multiplyScalar(2.6),
+      color: new THREE.Color(hexColor).multiplyScalar(2.4),
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.9,
       side: THREE.DoubleSide,
       toneMapped: false,
       depthWrite: false,
@@ -307,11 +337,13 @@ export class ParticlePool {
       mesh,
       life: duration,
       maxLife: duration,
-      maxScale,
+      maxScale: Math.min(maxScale, 24),
     });
   }
 
-  public update(dt: number, railSpeed: number): void {
+  public update(dt: number, railSpeed: number, cameraPos?: THREE.Vector3): void {
+    const camPos = cameraPos ?? this.defaultCamPos;
+
     // Trigger any scheduled secondary mega-explosion firework pops
     for (let i = this.delayedPops.length - 1; i >= 0; i--) {
       const dp = this.delayedPops[i];
@@ -319,10 +351,10 @@ export class ParticlePool {
       dp.pos.z += railSpeed * 0.2 * dt;
       if (dp.delay <= 0) {
         this.delayedPops.splice(i, 1);
-        if (dp.pos.z < 8.0) {
+        if (dp.pos.distanceTo(camPos) >= 8.0) {
           this.spawnFireball(dp.pos, dp.colorHex, dp.scale, 0.2);
-          this.burst(dp.pos, 16, dp.colorHex, 26, 0.95, 0.48, 2.0);
-          this.spawnShockwave(dp.pos, dp.colorHex, 8.5, 0.3, true);
+          this.burst(dp.pos, 16, dp.colorHex, 26, 0.9, 0.46, 2.0);
+          this.spawnShockwave(dp.pos, dp.colorHex, 7.5, 0.3, true);
         }
       }
     }
@@ -332,24 +364,27 @@ export class ParticlePool {
       if (!p.active) continue;
 
       p.life -= dt;
-      if (p.life <= 0 || p.pos.z > 10.5) {
-        p.active = false;
-        this.dummy.scale.set(0, 0, 0);
-        this.dummy.updateMatrix();
-        this.mesh.setMatrixAt(i, this.dummy.matrix);
-        continue;
-      }
-
       p.pos.x += p.vel.x * dt;
       p.pos.y += p.vel.y * dt;
       p.pos.z += (p.vel.z + railSpeed * 0.35) * dt;
       p.vel.multiplyScalar(0.95);
+
+      const camDist = p.pos.distanceTo(camPos);
+      if (p.life <= 0 || p.pos.z > 8.5 || camDist < 6.0) {
+        p.active = false;
+        this.dummy.scale.set(0, 0, 0);
+        this.dummy.updateMatrix();
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
+        this.particleAlphaAttr.setX(i, 0);
+        continue;
+      }
 
       p.rot.x += p.rotVel.x * dt;
       p.rot.y += p.rotVel.y * dt;
       p.rot.z += p.rotVel.z * dt;
 
       const t = p.life / p.maxLife;
+      const camFade = camDist >= 12.0 ? 1.0 : THREE.MathUtils.clamp((camDist - 6.0) / 6.0, 0, 1);
       const s = p.scale * t;
       this.dummy.position.copy(p.pos);
       this.dummy.rotation.copy(p.rot);
@@ -357,24 +392,36 @@ export class ParticlePool {
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(i, this.dummy.matrix);
       this.mesh.setColorAt(i, p.color);
+      this.particleAlphaAttr.setX(i, camFade);
     }
 
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.particleAlphaAttr.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
 
-    // Update HDR fireball cores (white-hot -> bright blast hue -> vanish)
+    // Update HDR fireball cores (white-hot -> bright blast hue -> vanish; near-camera smooth fade + viewport scale cap!)
     for (const fb of this.fireballs) {
       if (!fb.active) continue;
       fb.life -= dt;
       fb.mesh.position.z += railSpeed * 0.22 * dt;
-      if (fb.life <= 0 || fb.mesh.position.z > 9.0) {
+      const camDist = fb.mesh.position.distanceTo(camPos);
+      if (fb.life <= 0 || fb.mesh.position.z > 8.5) {
         fb.active = false;
         fb.mesh.visible = false;
         continue;
       }
+      if (camDist < 6.0) {
+        fb.mesh.visible = false;
+        continue;
+      }
+      fb.mesh.visible = true;
+      const camFade = camDist >= 12.0 ? 1.0 : THREE.MathUtils.clamp((camDist - 6.0) / 6.0, 0, 1);
       const prog = 1 - fb.life / fb.maxLife;
       const easeOut = 1 - Math.pow(1 - prog, 2.5);
-      const s = 0.45 + easeOut * fb.maxScale;
+      const rawScale = 0.45 + easeOut * fb.maxScale;
+      // Dynamically cap radius vs camera distance so explosion spheres NEVER fill the viewport!
+      const viewportSafeCap = Math.max(0.35, (camDist - 5.5) * 0.14);
+      const s = Math.min(rawScale, viewportSafeCap);
       fb.mesh.scale.setScalar(s);
       fb.mesh.rotation.y += dt * 7;
       fb.mesh.rotation.x += dt * 5;
@@ -383,8 +430,8 @@ export class ParticlePool {
       fb.mat.color
         .copy(fb.baseColor)
         .lerp(new THREE.Color(0xffffff), whiteMix)
-        .multiplyScalar(2.8);
-      fb.mat.opacity = Math.max(0, (1 - prog) * (1 - prog) * 0.92);
+        .multiplyScalar(2.6);
+      fb.mat.opacity = Math.max(0, (1 - prog) * (1 - prog) * 0.88 * camFade);
     }
 
     // Update pooled dynamic explosion PointLights
@@ -399,7 +446,7 @@ export class ParticlePool {
       }
     }
 
-    // Update shockwaves
+    // Update shockwaves (smooth near-camera opacity fade < 12 units, cull/hide < 6 units!)
     for (let i = this.shockwaves.length - 1; i >= 0; i--) {
       const sw = this.shockwaves[i];
       sw.life -= dt;
@@ -409,10 +456,17 @@ export class ParticlePool {
         this.shockwaves.splice(i, 1);
         continue;
       }
+      const camDist = sw.mesh.position.distanceTo(camPos);
+      if (camDist < 6.0) {
+        sw.mesh.visible = false;
+        continue;
+      }
+      sw.mesh.visible = true;
+      const camFade = camDist >= 12.0 ? 1.0 : THREE.MathUtils.clamp((camDist - 6.0) / 6.0, 0, 1);
       const prog = 1 - sw.life / sw.maxLife;
       const s = 0.5 + prog * sw.maxScale;
       sw.mesh.scale.set(s, s, 1);
-      (sw.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - prog) * 0.95;
+      (sw.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - prog) * 0.9 * camFade;
     }
   }
 
@@ -421,8 +475,10 @@ export class ParticlePool {
     for (let i = 0; i < this.maxParticles; i++) {
       this.particles[i].active = false;
       this.mesh.setMatrixAt(i, zero);
+      this.particleAlphaAttr.setX(i, 0);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.particleAlphaAttr.needsUpdate = true;
     for (const fb of this.fireballs) {
       fb.active = false;
       fb.mesh.visible = false;

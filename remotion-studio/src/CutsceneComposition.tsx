@@ -76,6 +76,20 @@ export const CutsceneComposition: React.FC<CutsceneProps> = ({
   const activeCue = subtitles.find((c) => frame >= c.startFrame && frame <= c.endFrame);
   const isHighlight = Boolean(activeCue?.highlight);
 
+  // Responsive subtitle font sizing so long villain punchlines NEVER overflow or clip!
+  const cueLen = activeCue?.text.length ?? 0;
+  const subtitleFontSize = isHighlight
+    ? cueLen > 34
+      ? 29
+      : cueLen > 26
+        ? 33
+        : 38
+    : cueLen > 40
+      ? 24
+      : cueLen > 30
+        ? 27
+        : 30;
+
   // Impact shake on title slam AND during highlighted punchlines!
   const shakeAmp =
     frame >= 8 && frame <= 20
@@ -516,31 +530,38 @@ export const CutsceneComposition: React.FC<CutsceneProps> = ({
         <div
           style={{
             flex: 1,
+            minWidth: 0,
             minHeight: 114,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '16px 28px',
+            padding: '14px 24px',
             background: 'linear-gradient(135deg, rgba(4, 10, 26, 0.92), rgba(16, 6, 32, 0.9))',
             border: `3px solid ${isHighlight ? accentColor : themeColor}`,
             borderRadius: 10,
             boxShadow: `0 0 34px ${isHighlight ? accentColor : themeColor}66`,
+            overflow: 'hidden',
+            boxSizing: 'border-box',
           }}
         >
           {activeCue && (
             <div
               style={{
+                maxWidth: '100%',
                 fontFamily: "'Orbitron', 'Arial Black', sans-serif",
-                fontSize: isHighlight ? 40 : 31,
+                fontSize: subtitleFontSize,
                 fontWeight: 900,
-                letterSpacing: 2,
+                letterSpacing: 1.4,
                 textAlign: 'center',
                 lineHeight: 1.24,
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                whiteSpace: 'normal',
                 color: isHighlight ? '#ffd447' : '#ffffff',
                 textShadow: isHighlight
                   ? '0 0 28px rgba(255, 212, 71, 0.98), 0 4px 0 #000'
                   : `0 0 16px ${themeColor}, 0 3px 0 #000`,
-                transform: `scale(${interpolate(cuePop, [0, 1], [0.78, 1.0])})`,
+                transform: `scale(${interpolate(cuePop, [0, 1], [0.84, 1.0])})`,
               }}
             >
               {activeCue.text}

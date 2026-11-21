@@ -64,6 +64,7 @@ export interface LoadoutHudState {
 }
 
 export type CommsSpeaker = 'commander' | 'wingman' | 'boss' | 'grunt' | 'mechanic' | 'blitz' | 'tank';
+export type NotifyVariant = 'kill' | 'upgrade' | 'ally' | 'stunt' | 'warn';
 
 const LEVEL_ART_MAP: Record<string, string> = {
   'neon-canyon': '/assets/art/level-01.jpg',
@@ -91,6 +92,9 @@ export class HUD {
   private bossHpFill: HTMLElement | null = null;
   private bossHpLag: HTMLElement | null = null;
   private bannerEl: HTMLElement | null = null;
+  private notifyStackEl: HTMLElement | null = null;
+  private notifyItems: Array<{ el: HTMLElement; text: string; remaining: number }> = [];
+  private lastCommsByKey = new Map<string, number>();
   private commsBox: HTMLElement | null = null;
   private commsImg: HTMLImageElement | null = null;
   private commsSpeakerEl: HTMLElement | null = null;
@@ -117,6 +121,7 @@ export class HUD {
   private hitConfirmTimer = 0;
   private activeCutsceneDone: (() => void) | null = null;
   private activeCutsceneEl: HTMLElement | null = null;
+  private activeVideoCleanup: (() => void) | null = null;
   private cutsceneSkipFillEl: HTMLElement | null = null;
   private cutsceneSkipPillEl: HTMLElement | null = null;
   private cutsceneMouseHeld = false;
@@ -125,7 +130,7 @@ export class HUD {
   private tutorialTimer = 0;
 
   /**
-   * Preloads a cutscene video off-DOM so boss intros start instantaneously with zero black flash!
+   * Preloads a cutscene video off-DOM so boss intros & finale sequences start instantaneously with zero black flash!
    */
   public preloadCutscene(videoId: string): void {
     if (this.preloadedVideos.has(videoId)) return;
@@ -139,7 +144,24 @@ export class HUD {
   }
 
   public playCutscene(videoId: string, muted: boolean, onDone: () => void, fallbackUrl?: string): void {
+    this.playCutsceneSequence([videoId], muted, onDone, fallbackUrl);
+  }
+
+  /**
+   * Plays one or more cutscenes back-to-back seamlessly inside a single overlay.
+   * Holding [SPACE / A / Click] skips the remaining sequence cleanly straight to `onDone`.
+   */
+  public playCutsceneSequence(
+    videoIds: string[],
+    muted: boolean,
+    onDone: () => void,
+    fallbackUrl?: string
+  ): void {
     this.skipActiveCutscene(false);
+    if (videoIds.length === 0) {
+      onDone();
+      return;
+    }
     this.cutsceneMouseHeld = false;
 
     const overlay = document.createElement('div');
@@ -154,20 +176,6 @@ export class HUD {
       </div>
     `;
 
-    // Reuse preloaded video element if available (zero decode delay!)
-    const cached = this.preloadedVideos.get(videoId);
-    const video = cached ?? document.createElement('video');
-    video.className = 'cutscene-video';
-    video.playsInline = true;
-    video.autoplay = true;
-    video.muted = muted;
-    if (!cached) {
-      video.src = `/assets/video/${videoId}.mp4`;
-    } else {
-      video.currentTime = 0;
-    }
-
-    overlay.prepend(video);
     this.root.appendChild(overlay);
     this.activeCutsceneEl = overlay;
     this.activeCutsceneDone = onDone;
@@ -175,40 +183,13 @@ export class HUD {
     this.cutsceneSkipFillEl = overlay.querySelector('#cutscene-skip-fill');
 
     const veil = overlay.querySelector('#cutscene-veil') as HTMLElement | null;
+    let veilLifted = false;
     const liftVeil = () => {
-      if (!veil) return;
+      if (veilLifted || !veil) return;
+      veilLifted = true;
       veil.classList.add('fade-out');
       window.setTimeout(() => veil.remove(), 340);
     };
-
-    const finish = () => this.skipActiveCutscene(true);
-
-    let triedFallback = false;
-    const onError = () => {
-      if (!triedFallback && fallbackUrl) {
-        triedFallback = true;
-        video.src = fallbackUrl;
-        video.load();
-        video.play().catch(finish);
-        return;
-      }
-      // Graceful synthwave celebration fallback if video asset is missing
-      if (veil) {
-        veil.textContent = 'FRONTIER LIBERATED // VICTORY!';
-        window.setTimeout(finish, 1800);
-      } else {
-        finish();
-      }
-    };
-
-    video.addEventListener('ended', finish, { once: true });
-    video.addEventListener('error', onError);
-    if (video.readyState >= 2) {
-      window.setTimeout(liftVeil, 180);
-    } else {
-      video.addEventListener('loadeddata', () => window.setTimeout(liftVeil, 120), { once: true });
-      window.setTimeout(liftVeil, 420);
-    }
 
     // Mouse hold on skip pill also fills the 0.6s skip bar
     this.cutsceneSkipPillEl?.addEventListener('pointerdown', (e) => {
@@ -217,10 +198,91 @@ export class HUD {
     });
     window.addEventListener('pointerup', this.onCutscenePointerUp);
 
-    video.play().catch(() => {
-      video.muted = true;
-      video.play().catch(onError);
-    });
+    let seqIndex = 0;
+    const playClipAt = (idx: number) => {
+      if (this.activeCutsceneEl !== overlay) return;
+      if (idx >= videoIds.length) {
+        this.skipActiveCutscene(true);
+        return;
+      }
+
+      if (this.activeVideoCleanup) {
+        this.activeVideoCleanup();
+        this.activeVideoCleanup = null;
+      }
+
+      // Preload upcoming clip in sequence if not already cached
+      if (idx + 1 < videoIds.length) {
+        this.preloadCutscene(videoIds[idx + 1]);
+      }
+
+      const videoId = videoIds[idx];
+      const cached = this.preloadedVideos.get(videoId);
+      const video = cached ?? document.createElement('video');
+      video.className = 'cutscene-video';
+      video.playsInline = true;
+      video.autoplay = true;
+      video.muted = muted;
+      if (!cached) {
+        video.src = `/assets/video/${videoId}.mp4`;
+      } else {
+        try {
+          video.currentTime = 0;
+        } catch {
+          // ignore if not yet seekable
+        }
+      }
+
+      const advance = () => {
+        if (this.activeCutsceneEl !== overlay) return;
+        seqIndex = idx + 1;
+        playClipAt(seqIndex);
+      };
+
+      let triedFallback = false;
+      const onError = () => {
+        if (this.activeCutsceneEl !== overlay) return;
+        if (!triedFallback && idx === videoIds.length - 1 && fallbackUrl) {
+          triedFallback = true;
+          video.src = fallbackUrl;
+          video.load();
+          video.play().catch(advance);
+          return;
+        }
+        advance();
+      };
+
+      const onLoaded = () => window.setTimeout(liftVeil, 120);
+
+      video.addEventListener('ended', advance);
+      video.addEventListener('error', onError);
+      if (idx === 0) {
+        if (video.readyState >= 2) {
+          window.setTimeout(liftVeil, 160);
+        } else {
+          video.addEventListener('loadeddata', onLoaded);
+          window.setTimeout(liftVeil, 420);
+        }
+      } else {
+        liftVeil();
+      }
+
+      this.activeVideoCleanup = () => {
+        video.removeEventListener('ended', advance);
+        video.removeEventListener('error', onError);
+        video.removeEventListener('loadeddata', onLoaded);
+        video.pause();
+        video.remove();
+      };
+
+      overlay.prepend(video);
+      video.play().catch(() => {
+        video.muted = true;
+        video.play().catch(onError);
+      });
+    };
+
+    playClipAt(0);
   }
 
   private onCutscenePointerUp = (): void => {
@@ -243,11 +305,14 @@ export class HUD {
   public skipActiveCutscene(invokeCallback = true): void {
     window.removeEventListener('pointerup', this.onCutscenePointerUp);
     this.cutsceneMouseHeld = false;
+    if (this.activeVideoCleanup) {
+      this.activeVideoCleanup();
+      this.activeVideoCleanup = null;
+    }
     if (this.activeCutsceneEl) {
       const vid = this.activeCutsceneEl.querySelector('video');
       if (vid) {
         vid.pause();
-        // Detach from DOM without destroying preloaded cache
         vid.remove();
       }
       this.activeCutsceneEl.remove();
@@ -282,12 +347,22 @@ export class HUD {
   private weaponPill: HTMLElement | null = null;
   private bombPill: HTMLElement | null = null;
   private padPill: HTMLElement | null = null;
-  private hasBossCheckpoint = false;
+  private hasCheckpoint = false;
+  private checkpointKind: 'MID-SECTOR' | 'BOSS' = 'BOSS';
   private controllerLabel = 'NO CONTROLLER DETECTED (PRESS ANY PAD BUTTON)';
   private nintendoLayout = false;
   private focusedButtonIdx = 0;
   private hangarReturnTarget: 'Title' | 'NextSector' = 'Title';
   private metaRef: MetaProgression | null = null;
+
+  // Interactive 3-letter arcade initials picker (Victory screen: full gamepad + keyboard + mouse!)
+  private readonly initialsCharset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  private initialsPickerActive = false;
+  private initialsLetters: [string, string, string] = ['A', 'C', 'E'];
+  private initialsSlotIdx = 0;
+  private initialsCommitFn: (() => void) | null = null;
+  private initialsSyncUiFn: (() => void) | null = null;
+  private initialsKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   public setMetaProgression(meta: MetaProgression): void {
     this.metaRef = meta;
@@ -331,8 +406,64 @@ export class HUD {
     if (first) first.classList.add('gamepad-focus');
   }
 
+  public setCheckpoint(active: boolean, kind: 'MID-SECTOR' | 'BOSS' = 'BOSS'): void {
+    this.hasCheckpoint = active;
+    this.checkpointKind = kind;
+  }
+
   public setBossCheckpoint(active: boolean): void {
-    this.hasBossCheckpoint = active;
+    this.setCheckpoint(active, 'BOSS');
+  }
+
+  public isInitialsPickerActive(): boolean {
+    return this.initialsPickerActive;
+  }
+
+  /**
+   * Routes gamepad D-pad/stick (dx = slot left/right, dy = cycle A-Z up/down) and confirm [A]
+   * into the 3-letter arcade initials picker on the FRONTIER LIBERATED victory screen!
+   */
+  public handleInitialsInput(dx: number, dy: number, confirm: boolean): boolean {
+    if (!this.initialsPickerActive) return false;
+    if (dy !== 0) {
+      const cur = this.initialsLetters[this.initialsSlotIdx];
+      const curIdx = Math.max(0, this.initialsCharset.indexOf(cur));
+      // Up (-1) cycles A -> B -> C; Down (+1) cycles C -> B -> A (intuitive arcade dial!)
+      const step = dy < 0 ? 1 : -1;
+      const nextIdx = (curIdx + step + this.initialsCharset.length) % this.initialsCharset.length;
+      this.initialsLetters[this.initialsSlotIdx] = this.initialsCharset[nextIdx];
+      this.initialsSyncUiFn?.();
+      this.cb.onUiHover();
+      return true;
+    }
+    if (dx !== 0) {
+      this.initialsSlotIdx = (this.initialsSlotIdx + (dx > 0 ? 1 : -1) + 3) % 3;
+      this.initialsSyncUiFn?.();
+      this.cb.onUiHover();
+      return true;
+    }
+    if (confirm) {
+      if (this.initialsSlotIdx < 2) {
+        this.initialsSlotIdx += 1;
+        this.initialsSyncUiFn?.();
+        this.cb.onUiConfirm();
+      } else {
+        this.initialsCommitFn?.();
+        this.cb.onUiConfirm();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private detachInitialsPicker(): void {
+    this.initialsPickerActive = false;
+    this.initialsCommitFn = null;
+    this.initialsSyncUiFn = null;
+    if (this.initialsKeyHandler) {
+      window.removeEventListener('keydown', this.initialsKeyHandler);
+      this.initialsKeyHandler = null;
+    }
   }
 
   public setControllerInfo(connected: boolean, profile: string, name: string, nintendoLayout: boolean): void {
@@ -448,6 +579,7 @@ export class HUD {
     levels: LevelConfig[],
     story?: StoryCrawlData
   ): void {
+    this.detachInitialsPicker();
     if (this.crawlTimeout !== null) {
       window.clearTimeout(this.crawlTimeout);
       this.crawlTimeout = null;
@@ -518,7 +650,7 @@ export class HUD {
         </div>
         <div class="desktop-status-corner">
           <span>${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB EDITION'} &nbsp;•&nbsp; F11 FULLSCREEN</span>
-          <span>v1.1.0 &nbsp;•&nbsp; SWEET PAPA TECHNOLOGIES</span>
+          <span>v1.2.0 &nbsp;•&nbsp; SWEET PAPA TECHNOLOGIES</span>
         </div>
       </div>
     `;
@@ -605,7 +737,7 @@ export class HUD {
         </div>
         <div class="desktop-status-corner">
           <span id="pad-status-label">${this.escapeHtml(this.controllerLabel)}</span>
-          <span>v1.1.0 &nbsp;•&nbsp; ${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB'}</span>
+          <span>v1.2.0 &nbsp;•&nbsp; ${isDesktop ? 'DESKTOP EDITION' : 'ARCADE WEB'}</span>
         </div>
       </div>
     `;
@@ -922,6 +1054,7 @@ export class HUD {
         </div>
 
         <div class="hud-banner" id="hud-banner"></div>
+        <div class="hud-notify-stack" id="hud-notify-stack"></div>
         <div class="tutorial-prompt" id="tutorial-prompt"></div>
         <div class="tailgater-alert" id="tailgater-alert">
           <div class="tailgater-alert-head" id="tailgater-head">▲ TAILGATER ON YOUR SIX! ▲</div>
@@ -967,6 +1100,9 @@ export class HUD {
     this.bossHpFill = document.getElementById('boss-hp-fill');
     this.bossHpLag = document.getElementById('boss-hp-lag');
     this.bannerEl = document.getElementById('hud-banner');
+    this.notifyStackEl = document.getElementById('hud-notify-stack');
+    this.notifyItems = [];
+    this.lastCommsByKey.clear();
     this.tutorialPromptEl = document.getElementById('tutorial-prompt');
     this.commsBox = document.getElementById('comms-box');
     this.commsImg = document.getElementById('comms-img') as HTMLImageElement | null;
@@ -1009,11 +1145,13 @@ export class HUD {
     shieldPct: number,
     boostPct: number,
     progressPct: number,
-    bossInfo: { active: boolean; name: string; phase: number; hpPct: number },
+    bossInfo: { active: boolean; name: string; phase: number; hpPct: number; phaseShift?: boolean },
     reticle: ReticleScreenState,
     loadout: LoadoutHudState
   ): void {
     if (!this.hudLayer) return;
+
+    this.hudLayer.classList.toggle('boss-active', bossInfo.active);
 
     if (this.shieldFill && this.shieldVal) {
       const s = Math.max(0, Math.round(shieldPct));
@@ -1038,10 +1176,13 @@ export class HUD {
     }
     if (this.bossWrap && this.bossNameEl && this.bossPhaseEl && this.bossHpFill) {
       this.bossWrap.style.display = bossInfo.active ? 'block' : 'none';
+      this.bossWrap.classList.toggle('phase-shift', Boolean(bossInfo.active && bossInfo.phaseShift));
       if (bossInfo.active) {
         const w = `${Math.max(0, Math.min(100, bossInfo.hpPct * 100))}%`;
         this.bossNameEl.textContent = bossInfo.name;
-        this.bossPhaseEl.textContent = `PHASE ${bossInfo.phase}`;
+        this.bossPhaseEl.textContent = bossInfo.phaseShift
+          ? 'PHASE SHIFT // SHIELDED'
+          : `PHASE ${bossInfo.phase}`;
         this.bossHpFill.style.width = w;
         if (this.bossHpLag) this.bossHpLag.style.width = w;
       }
@@ -1098,7 +1239,18 @@ export class HUD {
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0 && this.bannerEl) {
-        this.bannerEl.classList.remove('visible');
+        this.bannerEl.classList.remove('visible', 'critical');
+      }
+    }
+    // Tick upper-third secondary notification stack (max 2 visible at once!)
+    for (let i = this.notifyItems.length - 1; i >= 0; i--) {
+      const item = this.notifyItems[i];
+      item.remaining -= dt;
+      if (item.remaining <= 0) {
+        item.el.classList.add('fade-out');
+        const elRef = item.el;
+        window.setTimeout(() => elRef.remove(), 220);
+        this.notifyItems.splice(i, 1);
       }
     }
     if (this.tutorialTimer > 0) {
@@ -1185,11 +1337,34 @@ export class HUD {
     window.setTimeout(() => el.remove(), 860);
   }
 
-  public showBanner(text: string, duration = 2.6): void {
+  public showBanner(text: string, duration = 2.4, critical = false): void {
     if (!this.bannerEl) return;
     this.bannerEl.textContent = text;
+    this.bannerEl.classList.toggle('critical', critical);
     this.bannerEl.classList.add('visible');
     this.bannerTimer = duration;
+  }
+
+  /**
+   * Secondary upper-third notification stack (strictly max 2 visible at once, compact font, 0.85 opacity)
+   * so upgrades, ally saves & multi-kills never block the player's reticle or flight tunnel!
+   */
+  public pushNotification(text: string, variant: NotifyVariant = 'upgrade', duration = 1.95): void {
+    if (!this.notifyStackEl) return;
+    const existing = this.notifyItems.find((item) => item.text === text);
+    if (existing) {
+      existing.remaining = duration;
+      return;
+    }
+    while (this.notifyItems.length >= 2) {
+      const oldest = this.notifyItems.shift();
+      oldest?.el.remove();
+    }
+    const el = document.createElement('div');
+    el.className = `hud-notify-item ${variant}`;
+    el.textContent = text;
+    this.notifyStackEl.appendChild(el);
+    this.notifyItems.push({ el, text, remaining: duration });
   }
 
   public showSquadronArrival(active: boolean): void {
@@ -1304,6 +1479,18 @@ export class HUD {
   public showComms(speaker: CommsSpeaker, message: string, duration = 3.8): void {
     if (!this.commsBox || !this.commsImg || !this.commsSpeakerEl || !this.commsMsgEl) return;
 
+    // Never concatenate duplicate sentences or repeat the exact same boss line back-to-back within 12s!
+    const cleanMsg = message.trim().replace(/^(.{6,}?)\s+\1$/i, '$1');
+    const now = performance.now();
+    if (speaker === 'boss') {
+      const normKey = `boss:${cleanMsg.toUpperCase()}`;
+      const lastShown = this.lastCommsByKey.get(normKey);
+      if (lastShown !== undefined && now - lastShown < 12000) {
+        return;
+      }
+      this.lastCommsByKey.set(normKey, now);
+    }
+
     const meta: Record<CommsSpeaker, { label: string; img: string; isBoss: boolean }> = {
       commander: { label: 'COMMANDER VEX // FLEET OPS', img: '/assets/art/portrait-commander.jpg', isBoss: false },
       wingman: { label: 'ACE PILOT NOVA // WING 2', img: '/assets/art/portrait-wingman.jpg', isBoss: false },
@@ -1317,7 +1504,7 @@ export class HUD {
     const m = meta[speaker];
     this.commsImg.src = m.img;
     this.commsSpeakerEl.textContent = m.label;
-    this.commsMsgEl.textContent = message;
+    this.commsMsgEl.textContent = cleanMsg;
     this.commsBox.classList.toggle('boss', m.isBoss);
     this.commsBox.classList.add('visible');
     this.commsTimer = duration;
@@ -1425,27 +1612,28 @@ export class HUD {
   }
 
   private renderGameOver(state: GameState): void {
-    const bossBtn = this.hasBossCheckpoint
-      ? '<button id="btn-retry-boss" class="neon-btn">RETRY BOSS CHECKPOINT [A]</button>'
+    const cpLabel = this.checkpointKind === 'BOSS' ? 'BOSS' : '50%';
+    const checkpointBtn = this.hasCheckpoint
+      ? `<button id="btn-retry-checkpoint" class="neon-btn">RETRY CHECKPOINT (${cpLabel}) [A]</button>`
       : '';
     this.root.innerHTML = `
       <div class="menu-screen interactive">
-        <div class="tally-card" style="border-color:var(--crimson);">
+        <div class="tally-card" style="border-color:var(--crimson);max-width:480px;">
           <div class="tally-title" style="color:var(--crimson);">SIGNAL LOST</div>
           <div class="tally-rows">
             <div class="tally-row"><span>SCORE</span><span>${state.stats.score.toLocaleString()}</span></div>
             <div class="tally-row"><span>MAX COMBO</span><span>${state.stats.maxCombo}x</span></div>
             <div class="tally-row"><span>ENEMIES DESTROYED</span><span>${state.stats.enemiesDestroyed}</span></div>
           </div>
-          <div class="menu-actions" style="margin-bottom:0;">
-            ${bossBtn}
-            <button id="btn-retry" class="neon-btn ${this.hasBossCheckpoint ? 'secondary' : ''}">RESTART SECTOR</button>
+          <div class="pause-stack" style="margin-top:8px;">
+            ${checkpointBtn}
+            <button id="btn-retry" class="neon-btn ${this.hasCheckpoint ? 'secondary' : ''}">RESTART SECTOR</button>
             <button id="btn-menu" class="neon-btn secondary">MAIN BRIDGE</button>
           </div>
         </div>
       </div>
     `;
-    document.getElementById('btn-retry-boss')?.addEventListener('click', () => this.cb.onRetryBoss());
+    document.getElementById('btn-retry-checkpoint')?.addEventListener('click', () => this.cb.onRetryBoss());
     document.getElementById('btn-retry')?.addEventListener('click', () => this.cb.onRetryLevel());
     document.getElementById('btn-menu')?.addEventListener('click', () => this.cb.onBackToTitle());
     this.bindArcadeButtonJuice();
@@ -1498,23 +1686,48 @@ export class HUD {
   }
 
   private renderVictory(state: GameState): void {
-    const campaignRank = Leaderboard.computeCampaignRank(state.totalCampaignScore);
+    const sectorRankList = state.sectorRanks.map((r) => r.rank);
+    const campaignRank = Leaderboard.computeCampaignRank(state.totalCampaignScore, sectorRankList);
+    const sectorBreakdownHtml =
+      state.sectorRanks.length > 0
+        ? `<div class="sector-rank-strip">${state.sectorRanks
+            .map((r) => `<span class="sector-rank-chip">S${r.sector}: <strong>${r.rank}</strong></span>`)
+            .join('')}</div>`
+        : '';
+
+    this.initialsLetters = ['A', 'C', 'E'];
+    this.initialsSlotIdx = 0;
+    this.initialsPickerActive = true;
+
     this.root.innerHTML = `
       <div class="menu-screen interactive">
         <div class="title-backdrop" style="background-image:url('/assets/art/title-hero.jpg')"></div>
-        <div class="tally-card" style="border-color:var(--gold);max-width:640px;">
-          <div class="tally-title" style="color:var(--gold);">FRONTIER LIBERATED</div>
-          <div class="tally-rank" style="font-size:3.8rem;margin:2px 0 10px;">${campaignRank}</div>
-          <p style="margin-bottom:14px;font-size:1.05rem;color:#dff6ff;">
-            The Hyper-Grid core has been shattered. Enter your 3-letter arcade initials!
-          </p>
+        <div class="tally-card victory-card" style="border-color:var(--gold);max-width:660px;">
+          <div class="tally-title" style="color:var(--gold);margin-bottom:4px;">FRONTIER LIBERATED</div>
+          <div class="tally-rank" style="font-size:3.5rem;margin:2px 0 6px;">${campaignRank}</div>
+          ${sectorBreakdownHtml}
           <div class="tally-rows" style="margin-bottom:10px;">
             <div class="tally-row"><span>TOTAL CAMPAIGN SCORE</span><span>${state.totalCampaignScore.toLocaleString()}</span></div>
           </div>
-          <div class="initials-form" id="initials-form">
-            <input id="initials-input" class="initials-input" type="text" maxlength="3" placeholder="ACE" value="ACE" />
-            <button id="btn-save-score" class="neon-btn small">SAVE SCORE</button>
+
+          <div class="arcade-initials-panel" id="initials-form">
+            <div class="initials-kicker">ENTER 3-LETTER ARCADE INITIALS</div>
+            <div class="initials-drums" id="initials-drums">
+              ${[0, 1, 2]
+                .map(
+                  (slot) => `
+                  <div class="initials-drum ${slot === 0 ? 'active' : ''}" data-slot="${slot}">
+                    <button type="button" class="drum-arrow" data-slot="${slot}" data-dir="-1" tabindex="-1">▲</button>
+                    <div class="drum-letter" id="drum-letter-${slot}">${this.initialsLetters[slot]}</div>
+                    <button type="button" class="drum-arrow" data-slot="${slot}" data-dir="1" tabindex="-1">▼</button>
+                  </div>`
+                )
+                .join('')}
+              <button type="button" id="btn-save-score" class="neon-btn small" style="margin-left:8px;">SAVE [A / ENTER]</button>
+            </div>
+            <div class="initials-hint">D-PAD / STICK ▲▼: CYCLE A–Z &nbsp;•&nbsp; ◄►: SLOT &nbsp;•&nbsp; [A / ENTER]: CONFIRM</div>
           </div>
+
           <div id="victory-leaderboard-wrap">${this.renderLeaderboardTableHtml()}</div>
           <div class="menu-actions" style="margin-bottom:0;">
             <button id="btn-again" class="neon-btn">PLAY AGAIN</button>
@@ -1525,15 +1738,23 @@ export class HUD {
       </div>
     `;
 
-    const inputEl = document.getElementById('initials-input') as HTMLInputElement | null;
-    const saveBtn = document.getElementById('btn-save-score') as HTMLButtonElement | null;
     const lbWrap = document.getElementById('victory-leaderboard-wrap');
     let saved = false;
+
+    const syncDrumsUI = () => {
+      for (let i = 0; i < 3; i++) {
+        const letterEl = document.getElementById(`drum-letter-${i}`);
+        if (letterEl) letterEl.textContent = this.initialsLetters[i];
+        const drumEl = this.root.querySelector<HTMLElement>(`.initials-drum[data-slot="${i}"]`);
+        drumEl?.classList.toggle('active', this.initialsPickerActive && i === this.initialsSlotIdx);
+      }
+    };
 
     const commitScore = () => {
       if (saved) return;
       saved = true;
-      const initials = inputEl?.value.trim() || 'ACE';
+      this.detachInitialsPicker();
+      const initials = this.initialsLetters.join('');
       Leaderboard.saveScore(
         initials,
         state.totalCampaignScore,
@@ -1543,15 +1764,73 @@ export class HUD {
       if (lbWrap) lbWrap.innerHTML = this.renderLeaderboardTableHtml();
       const form = document.getElementById('initials-form');
       if (form) {
-        form.innerHTML = `<span style="font-family:var(--font-display);color:var(--gold);letter-spacing:0.18em;">★ SCORE SAVED AS ${this.escapeHtml(initials.toUpperCase().slice(0, 3) || 'ACE')} ★</span>`;
+        form.innerHTML = `<div style="font-family:var(--font-display);font-size:1rem;color:var(--gold);letter-spacing:0.2em;padding:10px 0;">★ SCORE SAVED AS ${this.escapeHtml(initials)} ★</div>`;
+      }
+      // Shift gamepad focus cleanly onto PLAY AGAIN once initials are locked in!
+      const againBtn = document.getElementById('btn-again') as HTMLButtonElement | null;
+      if (againBtn) {
+        const btns = Array.from(this.root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+        btns.forEach((b) => b.classList.remove('gamepad-focus'));
+        this.focusedButtonIdx = Math.max(0, btns.indexOf(againBtn));
+        againBtn.classList.add('gamepad-focus');
       }
     };
 
-    saveBtn?.addEventListener('click', commitScore);
-    inputEl?.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Enter') commitScore();
+    this.initialsCommitFn = commitScore;
+    this.initialsSyncUiFn = syncDrumsUI;
+
+    // Mouse / pointer interaction on letter drums & arrows
+    this.root.querySelectorAll<HTMLElement>('.initials-drum').forEach((drum) => {
+      drum.addEventListener('click', () => {
+        if (!this.initialsPickerActive) return;
+        const slot = Number(drum.dataset.slot ?? '0');
+        this.initialsSlotIdx = slot;
+        syncDrumsUI();
+      });
     });
+    this.root.querySelectorAll<HTMLButtonElement>('.drum-arrow').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!this.initialsPickerActive) return;
+        this.initialsSlotIdx = Number(btn.dataset.slot ?? '0');
+        const dir = Number(btn.dataset.dir ?? '-1');
+        this.handleInitialsInput(0, dir, false);
+      });
+    });
+    document.getElementById('btn-save-score')?.addEventListener('click', commitScore);
+
+    // Direct keyboard A-Z / 0-9 / Arrow / Backspace / Enter support while picker is active!
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!this.initialsPickerActive) return;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        this.handleInitialsInput(0, -1, false);
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        this.handleInitialsInput(0, 1, false);
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        this.handleInitialsInput(-1, 0, false);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        this.handleInitialsInput(1, 0, false);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        this.initialsSlotIdx = Math.max(0, this.initialsSlotIdx - 1);
+        syncDrumsUI();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.handleInitialsInput(0, 0, true);
+      } else if (/^[a-zA-Z0-9]$/.test(e.key)) {
+        e.preventDefault();
+        this.initialsLetters[this.initialsSlotIdx] = e.key.toUpperCase();
+        if (this.initialsSlotIdx < 2) this.initialsSlotIdx += 1;
+        syncDrumsUI();
+        this.cb.onUiHover();
+      }
+    };
+    this.initialsKeyHandler = onKeyDown;
+    window.addEventListener('keydown', onKeyDown);
 
     document.getElementById('btn-again')?.addEventListener('click', () => {
       if (!saved) commitScore();
@@ -1566,7 +1845,9 @@ export class HUD {
       this.cb.onBackToTitle();
     });
     this.bindArcadeButtonJuice();
-    this.resetMenuFocus();
+    // Auto-focus stays on the 3-letter arcade initials picker FIRST (clear button focus rings!)
+    this.root.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.classList.remove('gamepad-focus'));
+    syncDrumsUI();
   }
 
   private escapeHtml(str: string): string {

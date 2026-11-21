@@ -546,8 +546,9 @@ export class PlayerShip {
   public takeDamage(amount: number): boolean {
     if (this.isInvulnerable) return false;
     this.shield = Math.max(0, this.shield - amount);
-    this.hitInvulnTimer = 0.72;
-    this.damageFlashTimer = 0.25;
+    // Strict 0.75s collision i-frames so a single obstacle/blade graze can never multi-hit!
+    this.hitInvulnTimer = 0.75;
+    this.damageFlashTimer = 0.3;
     this.timeSinceDamage = 0;
     return true;
   }
@@ -669,10 +670,12 @@ export class PlayerShip {
 
     let extraRoll = 0;
     let extraPitch = 0;
+    const bubbleMat = this.deflectBubble.material as THREE.MeshBasicMaterial;
     if (this.barrelRollTimer > 0) {
       const p = 1 - this.barrelRollTimer / this.barrelRollDuration;
       extraRoll = -this.barrelRollDir * p * Math.PI * 2;
-      (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = Math.sin(p * Math.PI) * 0.72;
+      bubbleMat.color.setHex(0x00f0ff).multiplyScalar(2.4);
+      bubbleMat.opacity = Math.sin(p * Math.PI) * 0.72;
       this.deflectBubble.rotation.y += dt * 10;
       this.deflectBubble.rotation.z += dt * 7;
     } else if (this.somersaultTimer > 0) {
@@ -681,10 +684,17 @@ export class PlayerShip {
       extraPitch = p * Math.PI * 2;
       this.root.position.y += Math.sin(p * Math.PI) * 3.1;
       this.root.position.z -= Math.sin(p * Math.PI * 2) * 1.8;
-      (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = Math.sin(p * Math.PI) * 0.85;
+      bubbleMat.color.setHex(0x00f0ff).multiplyScalar(2.4);
+      bubbleMat.opacity = Math.sin(p * Math.PI) * 0.85;
       this.deflectBubble.rotation.x += dt * 14;
+    } else if (this.damageFlashTimer > 0) {
+      // Brief crimson-gold shield-hit flash indicating active 0.75s collision i-frames!
+      const t = this.damageFlashTimer / 0.3;
+      bubbleMat.color.setHex(0xff5533).multiplyScalar(2.5);
+      bubbleMat.opacity = t * 0.78;
+      this.deflectBubble.rotation.y += dt * 12;
     } else {
-      (this.deflectBubble.material as THREE.MeshBasicMaterial).opacity = 0;
+      bubbleMat.opacity = 0;
     }
 
     this.shipMesh.rotation.set(this.bankPitch + extraPitch, this.yaw, this.bankRoll + extraRoll);
@@ -731,14 +741,21 @@ export class PlayerShip {
   }
 
   public setAccentState(overdrive: boolean, turbo: boolean): void {
-    if (turbo) {
+    if (this.damageFlashTimer > 0) {
+      this.shipLight.color.setHex(0xff4422);
+      this.shipLight.intensity = 9.5;
+      this.ribbonMat.color.setHex(0xff4422).multiplyScalar(2.2);
+    } else if (turbo) {
       this.shipLight.color.setHex(0x00ff88);
+      this.shipLight.intensity = 5.5;
       this.ribbonMat.color.setHex(0x00ff88).multiplyScalar(2.1);
     } else if (overdrive || this.weaponMode !== 'twin') {
       this.shipLight.color.setHex(0xffd447);
+      this.shipLight.intensity = 5.5;
       this.ribbonMat.color.setHex(0xffd447).multiplyScalar(2.1);
     } else {
       this.shipLight.color.setHex(0x00f0ff);
+      this.shipLight.intensity = 5.5;
       this.ribbonMat.color.setHex(0x00f0ff).multiplyScalar(1.9);
     }
   }

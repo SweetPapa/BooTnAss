@@ -41,6 +41,7 @@ export class BossController {
   public totalHp = 0;
   public maxTotalHp = 950;
   public fightElapsedSec = 0;
+  public phaseShiftInvulnTimer = 0;
   public readonly root = new THREE.Group();
   public readonly parts: BossPart[] = [];
 
@@ -66,6 +67,7 @@ export class BossController {
   private blastDoorLeft: THREE.Mesh | null = null;
   private blastDoorRight: THREE.Mesh | null = null;
   private coreShieldDome: THREE.Mesh | null = null;
+  private phaseShiftDome: THREE.Mesh | null = null;
   private coreLight: THREE.PointLight | null = null;
   private aegisTurrets: THREE.Object3D[] = [];
   private aegisThrusters: THREE.Mesh[] = [];
@@ -105,6 +107,7 @@ export class BossController {
     this.maxTotalHp = scaledHp;
     this.totalHp = scaledHp;
     this.fightElapsedSec = 0;
+    this.phaseShiftInvulnTimer = 0;
     this.age = 0;
     this.attackTimer = 0.85;
     this.attackPatternIdx = 0;
@@ -151,36 +154,38 @@ export class BossController {
     this.chargeOrb.visible = false;
     this.root.add(this.chargeOrb);
 
-    // Thin pulsing warning laser sightline (0.65s telegraph before sweep!)
+    // Thin pulsing warning laser sightline (length 56 centered at z=-24: Boss -52 -> +4, safely 10 units in front of camera!)
     const teleMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(0xffd447).multiplyScalar(2.6),
       transparent: true,
       opacity: 0.75,
       toneMapped: false,
+      depthWrite: false,
     });
-    this.telegraphLine = new THREE.Mesh(new THREE.BoxGeometry(36, 0.2, 95), teleMat);
+    this.telegraphLine = new THREE.Mesh(new THREE.BoxGeometry(36, 0.2, 56), teleMat);
     this.telegraphLine.visible = false;
     this.scene.add(this.telegraphLine);
 
-    // Dual-bar Laser Group (supports Horizontal Sweep, Vertical Sweep, AND Rotating X-Cross Cage!)
+    // Dual-bar Laser Group (runs cleanly from Boss z=-52 through Player z=0 to z=+4, NEVER slicing into camera lens!)
     this.sweepBeamGroup = new THREE.Group();
     const beamMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xff2a55).multiplyScalar(3.2),
+      color: new THREE.Color(0xff2a55).multiplyScalar(3.0),
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.9,
       toneMapped: false,
+      depthWrite: false,
     });
     const coreBeamMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xffffff).multiplyScalar(2.8),
+      color: new THREE.Color(0xffffff).multiplyScalar(2.6),
       toneMapped: false,
     });
 
-    this.sweepBar1 = new THREE.Mesh(new THREE.BoxGeometry(36, 1.1, 95), beamMat);
-    const inner1 = new THREE.Mesh(new THREE.BoxGeometry(36, 0.35, 95.2), coreBeamMat);
+    this.sweepBar1 = new THREE.Mesh(new THREE.BoxGeometry(36, 1.05, 56), beamMat);
+    const inner1 = new THREE.Mesh(new THREE.BoxGeometry(36, 0.34, 56.2), coreBeamMat);
     this.sweepBar1.add(inner1);
 
-    this.sweepBar2 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 24, 95), beamMat);
-    const inner2 = new THREE.Mesh(new THREE.BoxGeometry(0.35, 24, 95.2), coreBeamMat);
+    this.sweepBar2 = new THREE.Mesh(new THREE.BoxGeometry(1.05, 24, 56), beamMat);
+    const inner2 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 24, 56.2), coreBeamMat);
     this.sweepBar2.add(inner2);
     this.sweepBar2.visible = false;
 
@@ -467,6 +472,20 @@ export class BossController {
     this.root.add(coreGroup);
     this.registerPart('sentinel_core', coreGroup, Math.round(totalHp * 0.7), 3.95, true);
 
+    // Phase-Shift Invulnerability Dome (flashes bright cyan-magenta for 1.5s between Phase 1 & Phase 2!)
+    this.phaseShiftDome = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(5.8, 1),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0x00ffd5).multiplyScalar(2.4),
+        wireframe: true,
+        transparent: true,
+        opacity: 0.85,
+        toneMapped: false,
+      })
+    );
+    this.phaseShiftDome.visible = false;
+    this.root.add(this.phaseShiftDome);
+
     // 4 Rotating Wireframe Prism Shields (block normal shots; shatter on reflected plasma orbs!)
     const shieldHp = Math.round((totalHp * 0.3) / 4);
     for (let i = 0; i < 4; i++) {
@@ -636,6 +655,22 @@ export class BossController {
       };
     }
 
+    // Phase-Shift Invulnerability Window (e.g. Octa-Core Sentinel 1.5s Phase 1 -> Phase 2 barrier!)
+    if (this.phaseShiftInvulnTimer > 0) {
+      part.hitFlashTimer = 0.06;
+      part.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.material = SHIELD_BLOCK_MAT;
+      });
+      return {
+        partDestroyed: false,
+        phaseBreak: false,
+        bossDefeated: false,
+        blocked: true,
+        shatteredShield: false,
+        pos,
+      };
+    }
+
     // SECTOR 2: Octa-Core Sentinel Prism Shields block normal shots, SHATTER on reflected orbs!
     if (part.isReflectShield) {
       if (!isReflected) {
@@ -659,7 +694,12 @@ export class BossController {
       this.totalHp = this.parts.reduce((acc, p) => acc + Math.max(0, p.hp), 0);
       const shieldsLeft = this.parts.filter((p) => p.isReflectShield && p.alive).length;
       const phaseBreak = this.phase === 1 && shieldsLeft <= 2;
-      if (phaseBreak) this.phase = 2;
+      if (phaseBreak) {
+        this.phase = 2;
+        this.phaseShiftInvulnTimer = 1.5;
+        this.attackTimer = Math.max(this.attackTimer, 1.55);
+        if (this.coreLight) this.coreLight.color.setHex(0xff2a85);
+      }
       return {
         partDestroyed: true,
         phaseBreak,
@@ -720,15 +760,23 @@ export class BossController {
         if (!this.parts.some((p) => !p.isCore && p.alive)) {
           this.phase = 2;
           phaseBreak = true;
-          if (this.coreShieldDome) this.coreShieldDome.visible = false;
+          // 1.5s phase-shift invulnerability window as blast doors open + guarantee immediate laser sweep!
+          this.phaseShiftInvulnTimer = 1.5;
+          this.attackPatternIdx = 2; // next attack increments to 3 => triggers telegraphed laser sweep!
+          this.attackTimer = 1.55;
+          if (this.coreShieldDome) {
+            this.coreShieldDome.visible = true;
+            (this.coreShieldDome.material as THREE.MeshBasicMaterial).color.setHex(0xffaa00).multiplyScalar(2.4);
+          }
           if (this.coreLight) this.coreLight.color.setHex(0xffaa00);
-          this.attackTimer = 0.85;
         }
       } else if (this.bossId === 'octa_core_sentinel') {
         if (this.totalHp <= this.maxTotalHp * 0.55) {
           this.phase = 2;
           phaseBreak = true;
-          this.attackTimer = 0.85;
+          this.phaseShiftInvulnTimer = 1.5;
+          this.attackTimer = Math.max(this.attackTimer, 1.55);
+          if (this.coreLight) this.coreLight.color.setHex(0xff2a85);
         }
       } else if (this.bossId === 'solaris_leviathan') {
         if (this.destroyedSegmentsCount >= 4) {
@@ -745,7 +793,8 @@ export class BossController {
     if (bossDefeated) {
       this.active = false;
       this.dying = true;
-      this.deathTimer = 1.65;
+      // Full 2.7s dramatic chain-reaction meltdown so the villain finishes its defeat line!
+      this.deathTimer = 2.7;
       this.deathBoomTimer = 0.04;
       this.sweepBeamActive = false;
       this.chargeTimer = 0;
@@ -793,7 +842,31 @@ export class BossController {
     if (!this.active) return;
 
     this.age += dt;
-    this.fightElapsedSec += dt;
+    if (this.entered) {
+      this.fightElapsedSec += dt;
+    }
+    if (this.phaseShiftInvulnTimer > 0) {
+      this.phaseShiftInvulnTimer = Math.max(0, this.phaseShiftInvulnTimer - dt);
+    }
+    if (this.phaseShiftDome) {
+      const shifting = this.phaseShiftInvulnTimer > 0;
+      this.phaseShiftDome.visible = shifting;
+      if (shifting) {
+        this.phaseShiftDome.rotation.y += dt * 4.5;
+        this.phaseShiftDome.rotation.x -= dt * 3.2;
+        const pulse = 1.0 + Math.sin(this.age * 28) * 0.08;
+        this.phaseShiftDome.scale.setScalar(pulse);
+      }
+    }
+    // Aegis Dreadnought core shield dome stays pulsing during its 1.5s Phase 2 transition, then shatters open!
+    if (this.bossId === 'aegis_dreadnought' && this.coreShieldDome && this.phase === 2) {
+      if (this.phaseShiftInvulnTimer > 0) {
+        this.coreShieldDome.visible = true;
+        this.coreShieldDome.scale.setScalar(1.0 + Math.sin(this.age * 28) * 0.08);
+      } else {
+        this.coreShieldDome.visible = false;
+      }
+    }
 
     // Entrance to Z = -52
     if (!this.entered) {
@@ -929,21 +1002,21 @@ export class BossController {
         this.sweepBar1.visible = true;
         this.sweepBar2.visible = true;
         this.sweepCrossAngle = prog * Math.PI * 1.15 * this.sweepBeamDir;
-        this.sweepBeamGroup.position.set(0, 0, -22);
+        this.sweepBeamGroup.position.set(0, 0, -24);
         this.sweepBeamGroup.rotation.set(0, 0, this.sweepCrossAngle);
       } else if (this.sweepAxis === 'horizontal') {
         this.sweepBar1.visible = true;
         this.sweepBar2.visible = false;
         const startY = this.sweepBeamDir > 0 ? -7.2 : 7.2;
         this.sweepBeamPos = THREE.MathUtils.lerp(startY, -startY, prog);
-        this.sweepBeamGroup.position.set(0, this.sweepBeamPos, -22);
+        this.sweepBeamGroup.position.set(0, this.sweepBeamPos, -24);
         this.sweepBeamGroup.rotation.set(0, 0, 0);
       } else {
         this.sweepBar1.visible = false;
         this.sweepBar2.visible = true;
         const startX = this.sweepBeamDir > 0 ? -12.5 : 12.5;
         this.sweepBeamPos = THREE.MathUtils.lerp(startX, -startX, prog);
-        this.sweepBeamGroup.position.set(this.sweepBeamPos, 0, -22);
+        this.sweepBeamGroup.position.set(this.sweepBeamPos, 0, -24);
         this.sweepBeamGroup.rotation.set(0, 0, 0);
       }
 
@@ -956,8 +1029,8 @@ export class BossController {
     if (!this.entered) return;
 
     this.attackTimer -= dt;
-    // Pause plasma barrages while charging or executing a laser sweep so every hazard stays crisp & fair!
-    if (this.attackTimer <= 0 && this.chargeTimer <= 0 && !this.sweepBeamActive) {
+    // Pause plasma barrages while charging, phase-shifting, or executing a laser sweep so every hazard stays crisp & fair!
+    if (this.attackTimer <= 0 && this.chargeTimer <= 0 && !this.sweepBeamActive && this.phaseShiftInvulnTimer <= 0) {
       this.triggerBossAttack(
         playerPos,
         playerVel,
@@ -1013,13 +1086,13 @@ export class BossController {
     this.chargeTimer = 0.8;
     if (this.telegraphLine) {
       if (axis === 'horizontal') {
-        this.telegraphLine.position.set(0, dir > 0 ? -6.8 : 6.8, -22);
+        this.telegraphLine.position.set(0, dir > 0 ? -6.8 : 6.8, -24);
         this.telegraphLine.rotation.set(0, 0, 0);
       } else if (axis === 'vertical') {
-        this.telegraphLine.position.set(dir > 0 ? -11.5 : 11.5, 0, -22);
+        this.telegraphLine.position.set(dir > 0 ? -11.5 : 11.5, 0, -24);
         this.telegraphLine.rotation.set(0, 0, Math.PI / 2);
       } else {
-        this.telegraphLine.position.set(0, 0, -22);
+        this.telegraphLine.position.set(0, 0, -24);
         this.telegraphLine.rotation.set(0, 0, Math.PI / 4);
       }
       this.telegraphLine.visible = true;
@@ -1206,7 +1279,7 @@ export class BossController {
   }
 
   /**
-   * Dramatic 1.65s Star-Fox-style chain-reaction meltdown before final supernova detonation!
+   * Dramatic 2.7s chain-reaction meltdown before final supernova detonation!
    */
   public updateDeathMeltdown(
     dt: number,
@@ -1215,7 +1288,7 @@ export class BossController {
   ): void {
     if (!this.dying) return;
     this.deathTimer -= dt;
-    const prog = Math.min(1, 1 - this.deathTimer / 1.65);
+    const prog = Math.min(1, 1 - this.deathTimer / 2.7);
 
     // Violently shudder, list sideways, sink downward, and flash core light!
     this.root.position.x += (Math.random() - 0.5) * (0.85 + prog * 1.4);
@@ -1264,12 +1337,14 @@ export class BossController {
     this.active = false;
     this.dying = false;
     this.deathTimer = 0;
+    this.phaseShiftInvulnTimer = 0;
     this.sweepBeamActive = false;
     this.chargeTimer = 0;
     this.pendingAttack = null;
     this.blastDoorLeft = null;
     this.blastDoorRight = null;
     this.coreShieldDome = null;
+    this.phaseShiftDome = null;
     this.coreLight = null;
     this.aegisTurrets = [];
     this.aegisThrusters = [];

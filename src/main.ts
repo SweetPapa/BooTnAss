@@ -97,10 +97,10 @@ const BANTER: Record<string, BanterLine[]> = {
     { voId: 'boss-warning-2', speaker: 'wingman', text: "Massive dreadnought dead ahead! Target the glowing weak points and stay sharp!" },
   ],
   bossBootNAss: [
-    { voId: 'boss-bootnass-1', speaker: 'boss', text: "I'MMA PUT BOOT N ASS!! I'MMA PUT BOOT N ASS!!" },
-    { voId: 'boss-bootnass-2', speaker: 'boss', text: "WARNING!! I'MMA PUT BOOT N ASS!! PREPARE FOR BOOT N ASS!!" },
-    { voId: 'boss-bootnass-3', speaker: 'boss', text: "INITIATING MAXIMUM PAIN!! I'MMA PUT BOOT N ASS!!" },
-    { voId: 'boss-bootnass-4', speaker: 'boss', text: "ERROR!! ERROR!! I'MMA PUT BOOT N ASS RIGHT NOW!!" },
+    { voId: 'boss-bootnass-1', speaker: 'boss', text: "I'MMA PUT BOOT N ASS!!" },
+    { voId: 'boss-bootnass-2', speaker: 'boss', text: "WARNING!! PREPARE FOR MAXIMUM BOOT N ASS!!" },
+    { voId: 'boss-bootnass-3', speaker: 'boss', text: "INITIATING MAXIMUM PAIN!! BOOT N ASS PROTOCOL!" },
+    { voId: 'boss-bootnass-4', speaker: 'boss', text: "SYSTEM OVERRIDE!! BOOT N ASS ENGAGED!!" },
   ],
   bossTaunt: [
     { voId: 'boss-taunt-1', speaker: 'boss', text: "How adorable. You brought a tiny pew-pew toy to a dreadnought fight. I'MMA PUT BOOT N ASS!" },
@@ -242,8 +242,23 @@ class BootNAssGame {
   private timeline: LevelTimelineDriver | null = null;
   private storyData: StoryCrawlData | null = null;
 
-  // Boss checkpoint tracking — if you lose at the boss, retry starts right at the boss!
-  private bossCheckpointDist: number | null = null;
+  // Mid-sector (50%) & Boss checkpoint tracking — real checkpoints with loadout preservation!
+  private checkpointDist: number | null = null;
+  private checkpointKind: 'mid' | 'boss' | null = null;
+  private midCheckpointSaved = false;
+  private checkpointSnapshot: {
+    score: number;
+    shotsFired: number;
+    shotsHit: number;
+    enemiesDestroyed: number;
+    deflections: number;
+    ringsCollected: number;
+    turboGatesHit: number;
+    hullDamageTaken: number;
+    weaponMode: 'twin' | 'spread' | 'gatling';
+    weaponTimer: number;
+    novaBombs: number;
+  } | null = null;
   private skipNextBossCutscene = false;
 
   // Wingman squadron cutscene & banter pacing
@@ -263,6 +278,10 @@ class BootNAssGame {
   // True Fisher-Yates shuffle bags (ZERO repeats until every line in a category has played!)
   private shuffleBags = new Map<string, number[]>();
   private casualBanterCooldown = 0;
+  private bossLineCooldown = 0;
+  private bossBlockHintCooldown = 0;
+  private weaponPickupVoCooldown = 0;
+  private barrelRollVoCooldown = 0;
 
   // Opening crawl audio auto-start flag
   private crawlAudioStarted = false;
@@ -283,6 +302,7 @@ class BootNAssGame {
   private screenShake = 0;
   private turboBoostTimer = 0;
   private lowShieldWarned = false;
+  private bossVictoryPending = false;
   private bossClearDelay = 0;
   private bossVictoryElapsed = 0;
   private playerDying = false;
@@ -328,8 +348,8 @@ class BootNAssGame {
       onCrawlFinished: () => this.enterTitle(),
       onStartCampaign: () => {
         this.audio.unlock();
-        this.state.totalCampaignScore = 0;
-        this.bossCheckpointDist = null;
+        this.state.resetCampaign();
+        this.clearCheckpoint();
         this.playCutsceneThen('intro-launch', () => this.startLevel(0, 0));
       },
       onOpenLevelSelect: () => {
@@ -368,36 +388,41 @@ class BootNAssGame {
       },
       onSelectLevel: (idx) => {
         this.audio.unlock();
-        this.bossCheckpointDist = null;
+        this.state.resetCampaign();
+        this.clearCheckpoint();
         this.startLevel(idx, 0);
       },
       onBackToTitle: () => this.enterTitle(),
       onNextLevel: () => {
-        this.bossCheckpointDist = null;
+        this.clearCheckpoint();
         const nextIdx = this.state.currentLevelIndex + 1;
         if (nextIdx < this.levels.length) {
           this.startLevel(nextIdx, 0);
         } else {
-          this.playCutsceneThen('victory-ending', () => {
-            this.state.phase = 'Victory';
-            this.audio.playMusicTrack('victory-fanfare', true, 0.55);
-            this.hud.renderPhase('Victory', this.state, this.levels);
-          });
+          this.playCutsceneSequenceThen(
+            ['hyperspace-escape', 'victory-ending', 'frontier-liberated'],
+            () => {
+              this.state.phase = 'Victory';
+              this.audio.playMusicTrack('victory-fanfare', true, 0.55);
+              this.hud.renderPhase('Victory', this.state, this.levels);
+            }
+          );
         }
       },
       onRetryLevel: () => {
-        this.bossCheckpointDist = null;
+        this.clearCheckpoint();
         this.startLevel(this.state.currentLevelIndex, 0);
       },
       onRetryBoss: () => {
-        const level = this.levels[this.state.currentLevelIndex];
-        const bossEv = level?.timeline.find((e) => e.type === 'boss');
-        const targetDist = this.bossCheckpointDist ?? bossEv?.atDistance ?? 0;
-        if (targetDist > 0) {
-          this.bossCheckpointDist = targetDist;
-          this.startLevel(this.state.currentLevelIndex, Math.max(0, targetDist - 20), true);
+        if (this.checkpointDist !== null && this.checkpointKind !== null) {
+          this.startLevel(
+            this.state.currentLevelIndex,
+            this.checkpointDist,
+            this.checkpointKind === 'boss',
+            true
+          );
         } else {
-          this.startLevel(this.state.currentLevelIndex, 0, false);
+          this.startLevel(this.state.currentLevelIndex, 0, false, false);
         }
       },
       onResume: () => {
@@ -472,8 +497,9 @@ class BootNAssGame {
         this.state.autoFire = !this.state.autoFire;
         this.state.saveSettings();
         if (this.state.phase === 'Playing') {
-          this.hud.showBanner(
-            this.state.autoFire ? 'AUTO-FIRE ENGAGED // ENJOY THE FIREWORKS!' : 'AUTO-FIRE OFF // MANUAL TRIGGER',
+          this.hud.pushNotification(
+            this.state.autoFire ? 'AUTO-FIRE ENGAGED // HOLD ON!' : 'AUTO-FIRE OFF // MANUAL TRIGGER',
+            'upgrade',
             1.6
           );
         }
@@ -551,8 +577,9 @@ class BootNAssGame {
         } else if (e.code === 'KeyT') {
           this.state.autoFire = !this.state.autoFire;
           this.state.saveSettings();
-          this.hud.showBanner(
-            this.state.autoFire ? 'AUTO-FIRE ENGAGED // ENJOY THE FIREWORKS!' : 'AUTO-FIRE OFF // MANUAL TRIGGER',
+          this.hud.pushNotification(
+            this.state.autoFire ? 'AUTO-FIRE ENGAGED // HOLD ON!' : 'AUTO-FIRE OFF // MANUAL TRIGGER',
+            'upgrade',
             1.6
           );
         }
@@ -576,11 +603,15 @@ class BootNAssGame {
   }
 
   private playCutsceneThen(videoId: string, onDone: () => void, fallbackUrl?: string): void {
+    this.playCutsceneSequenceThen([videoId], onDone, fallbackUrl);
+  }
+
+  private playCutsceneSequenceThen(videoIds: string[], onDone: () => void, fallbackUrl?: string): void {
     this.audio.stopMusicTrack();
     this.audio.stopVO();
     this.cutsceneLockoutTimer = 1.0; // 1.0s input lockout prevents accidental launch-button skips!
     this.cutsceneSkipHoldTimer = 0;
-    this.hud.playCutscene(videoId, this.state.muted, onDone, fallbackUrl);
+    this.hud.playCutsceneSequence(videoIds, this.state.muted, onDone, fallbackUrl);
     this.hud.updateCutsceneSkipUI(true, 0);
   }
 
@@ -608,6 +639,33 @@ class BootNAssGame {
     return bag.pop()!;
   }
 
+  private clearCheckpoint(): void {
+    this.checkpointDist = null;
+    this.checkpointKind = null;
+    this.checkpointSnapshot = null;
+    this.midCheckpointSaved = false;
+    this.hud.setCheckpoint(false);
+  }
+
+  private saveCheckpoint(dist: number, kind: 'mid' | 'boss'): void {
+    this.checkpointDist = Math.max(0, dist);
+    this.checkpointKind = kind;
+    this.checkpointSnapshot = {
+      score: this.state.stats.score,
+      shotsFired: this.state.stats.shotsFired,
+      shotsHit: this.state.stats.shotsHit,
+      enemiesDestroyed: this.state.stats.enemiesDestroyed,
+      deflections: this.state.stats.deflections,
+      ringsCollected: this.state.stats.ringsCollected,
+      turboGatesHit: this.state.stats.turboGatesHit,
+      hullDamageTaken: this.state.stats.hullDamageTaken,
+      weaponMode: this.player.weaponMode,
+      weaponTimer: this.player.weaponTimer,
+      novaBombs: this.player.novaBombs,
+    };
+    this.hud.setCheckpoint(true, kind === 'boss' ? 'BOSS' : 'MID-SECTOR');
+  }
+
   private playCategoryBanter(
     category: keyof typeof BANTER,
     duration = 4.2,
@@ -617,17 +675,30 @@ class BootNAssGame {
     const list = BANTER[category];
     if (!list || list.length === 0) return;
 
+    const isBossChatter = category === 'bossBootNAss' || category === 'bossTaunt';
+    if (isBossChatter && this.bossLineCooldown > 0) return;
+
+    // 25-second throttle on repetitive weapon-pickup ("4th of July") & barrel-roll ("return to sender") lines!
+    if (category === 'weaponPickup' && this.weaponPickupVoCooldown > 0) return;
+    if (category === 'barrelRoll' && this.barrelRollVoCooldown > 0) return;
+
+    // Boss Voice Priority: never talk over an active villain voiceover!
+    if (this.audio.isBossVoPlaying() && !isBossChatter) return;
+
     if (!priority) {
       if (this.casualBanterCooldown > 0) return;
       if (Math.random() > chance) return;
     }
 
-    // Pick a line from the shuffle bag that isn't currently on 12s per-line cooldown
+    const lineCooldownMs =
+      category === 'weaponPickup' || category === 'barrelRoll' ? 25000 : 12000;
+
+    // Pick a line from the shuffle bag that isn't currently on cooldown
     let chosen: BanterLine | null = null;
     for (let attempt = 0; attempt < list.length; attempt++) {
       const idx = this.drawFromShuffleBag(category, list.length);
       const candidate = list[idx];
-      if (!this.audio.isLineOnCooldown(candidate.voId, 12000)) {
+      if (!this.audio.isLineOnCooldown(candidate.voId, lineCooldownMs)) {
         chosen = candidate;
         break;
       }
@@ -653,10 +724,22 @@ class BootNAssGame {
       () => {
         this.hud.showComms(line.speaker, line.text, duration);
       },
-      false
+      false,
+      lineCooldownMs
     );
-    if (queued && !priority) {
-      this.casualBanterCooldown = 6.0;
+    if (queued) {
+      if (isBossChatter) {
+        // Strict 12-second cooldown between boss callouts so Sentinel never loops back-to-back!
+        this.bossLineCooldown = 12.0;
+      }
+      if (category === 'weaponPickup') {
+        this.weaponPickupVoCooldown = 25.0;
+      } else if (category === 'barrelRoll') {
+        this.barrelRollVoCooldown = 25.0;
+      }
+      if (!priority) {
+        this.casualBanterCooldown = 6.0;
+      }
     }
   }
 
@@ -666,9 +749,10 @@ class BootNAssGame {
     if (!list || list.length === 0) return;
     const idx = this.drawFromShuffleBag(category, list.length);
     const line = list[idx];
+    const prio: VoicePriority = line.speaker === 'boss' ? 3 : 2;
     this.audio.stopVO();
     this.hud.showComms(line.speaker, line.text, duration);
-    void this.audio.playVO(line.voId, false, true);
+    void this.audio.playVO(line.voId, false, true, prio);
   }
 
   private handleBootStart(): void {
@@ -734,13 +818,21 @@ class BootNAssGame {
     this.audio.stopVO();
     this.audio.playMusicTrack('title-theme', true, 0.48);
     this.clearEntities();
+    this.bossVictoryPending = false;
+    this.bossClearDelay = 0;
+    this.bossVictoryElapsed = 0;
     this.state.phase = 'Title';
     this.player.reset();
     this.player.root.visible = true;
     this.hud.renderPhase('Title', this.state, this.levels);
   }
 
-  private startLevel(index: number, startDist: number, isBossRetry = false): void {
+  private startLevel(
+    index: number,
+    startDist: number,
+    isBossRetry = false,
+    isCheckpointRespawn = false
+  ): void {
     const level = this.levels[index];
     if (!level) return;
 
@@ -749,14 +841,17 @@ class BootNAssGame {
     this.state.resetLevelStats(this.meta.maxShield);
     this.state.phase = 'Playing';
     this.skipNextBossCutscene = isBossRetry;
-    if (!isBossRetry && startDist === 0) {
-      this.bossCheckpointDist = null;
+    if (!isCheckpointRespawn && !isBossRetry && startDist === 0) {
+      this.clearCheckpoint();
+    } else if (startDist >= level.length * 0.45) {
+      this.midCheckpointSaved = true;
     }
     this.lowShieldWarned = false;
+    this.bossVictoryPending = false;
     this.bossClearDelay = 0;
     this.bossVictoryElapsed = 0;
     this.playerDying = false;
-    this.warpEntryTimer = isBossRetry ? 0.65 : 1.15;
+    this.warpEntryTimer = isBossRetry || isCheckpointRespawn ? 0.65 : 1.15;
     this.multiKillCount = 0;
     this.multiKillWindow = 0;
     this.criticalBeepTimer = 0;
@@ -770,6 +865,10 @@ class BootNAssGame {
     this.arrivalTankSpoke = false;
     this.allyHelpCooldown = 0;
     this.casualBanterCooldown = 4.0;
+    this.bossLineCooldown = 0;
+    this.bossBlockHintCooldown = 0;
+    this.weaponPickupVoCooldown = 0;
+    this.barrelRollVoCooldown = 0;
     this.ambientHazardTimer = isBossRetry ? 99 : 1.6;
     this.ambientCycle = 0;
     this.ambientPatrolTimer = isBossRetry ? 99 : 3.8;
@@ -788,7 +887,7 @@ class BootNAssGame {
     this.promptBombShown = false;
     this.activeTutorialPrompt = null;
 
-    // Preload this sector's boss cutscene + gameover/victory so there is ZERO black flash!
+    // Preload this sector's boss cutscene + sector-clear / finale cutscenes so there is ZERO black flash!
     const bossEv = level.timeline.find((e) => e.type === 'boss');
     if (bossEv && bossEv.type === 'boss') {
       const bossVid = BOSS_CUTSCENE_MAP[bossEv.bossId];
@@ -796,7 +895,11 @@ class BootNAssGame {
     }
     this.hud.preloadCutscene('gameover-eject');
     if (index === this.levels.length - 1) {
+      this.hud.preloadCutscene('hyperspace-escape');
       this.hud.preloadCutscene('victory-ending');
+      this.hud.preloadCutscene('frontier-liberated');
+    } else {
+      this.hud.preloadCutscene('cockpit-thumbsup');
     }
 
     this.player.reset();
@@ -807,30 +910,59 @@ class BootNAssGame {
       boostRechargeMult: this.meta.boostRechargeMult,
       barrelRollDurationBonus: this.meta.barrelRollDurationBonus,
     });
+
+    // Checkpoint Respawn: 100% shield, clean arena, keep upgraded weapon (or min Tier 2 Spread),
+    // preserve run progress with a 10% score penalty & 1x combo reset so no-death runs keep leaderboard prestige!
+    if (isCheckpointRespawn && this.checkpointSnapshot) {
+      const snap = this.checkpointSnapshot;
+      this.state.stats.score = Math.round(snap.score * 0.9);
+      this.state.stats.combo = 1;
+      this.state.stats.comboTimer = 0;
+      this.state.stats.shotsFired = snap.shotsFired;
+      this.state.stats.shotsHit = snap.shotsHit;
+      this.state.stats.enemiesDestroyed = snap.enemiesDestroyed;
+      this.state.stats.deflections = snap.deflections;
+      this.state.stats.ringsCollected = snap.ringsCollected;
+      this.state.stats.turboGatesHit = snap.turboGatesHit;
+      this.state.stats.hullDamageTaken = snap.hullDamageTaken;
+      const keepMode = snap.weaponMode === 'twin' ? 'spread' : snap.weaponMode;
+      const keepDur = Math.max(snap.weaponTimer, 14, this.meta.weaponDurationSec);
+      this.player.grantWeaponUpgrade(keepMode, keepDur);
+      this.player.novaBombs = Math.max(2, snap.novaBombs);
+    }
+
     this.trackCurve.reset();
     this.env.applyEnvironment(level.environment);
     this.timeline = new LevelTimelineDriver(level, startDist);
-    this.hud.setBossCheckpoint(this.bossCheckpointDist !== null);
+    this.hud.setCheckpoint(
+      this.checkpointDist !== null,
+      this.checkpointKind === 'boss' ? 'BOSS' : 'MID-SECTOR'
+    );
 
-    // If retrying Boss 2 or Boss 3 (or jumping past the ally arrival point), deploy Blitz & Tank with you!
+    // If retrying Boss 2/3 or respawning past the ally arrival point, deploy Blitz & Tank with you!
     if (
       (isBossRetry && index >= 1) ||
-      (startDist > 0 && level.timeline.some((e) => e.type === 'allies_arrive' && e.atDistance < startDist))
+      (startDist > 0 && level.timeline.some((e) => e.type === 'allies_arrive' && e.atDistance <= startDist))
     ) {
       this.squadron.deploy(false);
     }
 
     this.hud.renderPhase('Playing', this.state, this.levels);
     this.hud.setCriticalHull(false, false);
-    this.player.setEntryZOffset(isBossRetry ? 8 : 11);
+    this.player.setEntryZOffset(isBossRetry || isCheckpointRespawn ? 8 : 11);
     this.audio.playWarpEntry();
-    if (isBossRetry || (startDist > 0 && this.bossCheckpointDist !== null)) {
-      this.hud.showBanner('BOSS CHECKPOINT // ROUND TWO!', 2.4);
-      this.hud.showArcadeStamp('ROUND TWO // ENGAGE!', 'warp');
+    if (isBossRetry) {
+      this.hud.showBanner('BOSS CHECKPOINT // ROUND TWO!', 2.4, true);
       this.audio.playMusicTrack('boss-battle', true, 0.44, 0.78);
       this.playCategoryBanter('bossRetry', 3.6, true);
+    } else if (isCheckpointRespawn) {
+      this.hud.showBanner('CHECKPOINT RESPAWN // 50% SECTOR', 2.4, false);
+      const track =
+        LEVEL_MUSIC_MAP[level.id] ??
+        ['level-01-neon-canyon', 'level-02-prism-belt', 'level-03-hyper-spire'][index % 3];
+      this.audio.playMusicTrack(track, true, 0.42, 0.78);
+      this.playCategoryBanter('bossRetry', 3.6, true);
     } else {
-      this.hud.showBanner(level.name, 2.8);
       this.hud.showArcadeStamp(`HYPER-WARP // ${level.name}`, 'warp');
       const track =
         LEVEL_MUSIC_MAP[level.id] ??
@@ -855,8 +987,9 @@ class BootNAssGame {
     return {
       onNeedHelp: (allyId, callsign) => {
         if (this.allyHelpCooldown <= 0) {
-          this.allyHelpCooldown = 14.0;
-          this.hud.showBanner(`BOGEY ON ${callsign}'S TAIL // SHOOT IT DOWN!`, 2.2);
+          // Strict >= 20-second spacing between wingman rescue alerts!
+          this.allyHelpCooldown = 22.0;
+          this.hud.showBanner(`BOGEY ON ${callsign}'S TAIL // SHOOT IT DOWN!`, 2.2, true);
           this.playCategoryBanter(allyId === 'blitz' ? 'blitzHelp' : 'tankHelp', 3.6, true);
         }
       },
@@ -865,17 +998,17 @@ class BootNAssGame {
         this.player.heal(10);
         this.audio.playRingPickup();
         this.input.rumble(0.3, 0.4, 110);
-        this.particles.spawnShockwave(pos, allyId === 'blitz' ? 0x00ff88 : 0xffd447, 11, 0.4);
+        this.particles.spawnShockwave(pos, allyId === 'blitz' ? 0x00ff88 : 0xffd447, 10, 0.38);
         const sp = this.projectToScreen(pos);
         this.hud.spawnFloatingText(sp.x, sp.y, `SAVED ${callsign}! +${pts}`, allyId === 'blitz' ? '#00ff88' : '#ffd447');
-        this.hud.showArcadeStamp(`SAVED ${callsign}! +10 SHIELD`, 'clear');
+        this.hud.pushNotification(`SAVED ${callsign}! +10 SHIELD`, 'ally', 2.0);
         this.playCategoryBanter(allyId === 'blitz' ? 'blitzSaved' : 'tankSaved', 3.5, false, 1.0);
       },
       onEjected: (allyId, callsign, pos) => {
         this.audio.playExplosion(false);
         this.particles.burst(pos, 26, 0xff5500, 22, 1.15, 0.62);
-        this.particles.spawnShockwave(pos, 0xff4422, 11, 0.42);
-        this.hud.showBanner(`${callsign} EJECTED // HOLD THE LINE!`, 2.6);
+        this.particles.spawnShockwave(pos, 0xff4422, 10, 0.4);
+        this.hud.showBanner(`${callsign} EJECTED // HOLD THE LINE!`, 2.4, true);
         this.playCategoryBanter(allyId === 'blitz' ? 'blitzEject' : 'tankEject', 4.0, true);
       },
       onSpark: (pos, colorHex) => {
@@ -894,7 +1027,7 @@ class BootNAssGame {
           this.tailgaterWarnCooldown = 9.0;
           this.audio.playBossAlarm();
           this.input.rumble(0.45, 0.45, 160);
-          this.hud.showBanner('TAILGATER ON YOUR SIX! [R/Y] BACKFLIP OR [C/LB+RB] BRAKE!', 2.6);
+          this.hud.showBanner('TAILGATER ON YOUR SIX! [R/Y] BACKFLIP OR [C/LB+RB] BRAKE!', 2.6, true);
           this.playCategoryBanter(Math.random() < 0.72 ? 'tailgaterLock' : 'tailgaterTaunt', 3.8, true);
         }
       },
@@ -903,12 +1036,13 @@ class BootNAssGame {
         this.audio.playBoost();
         this.input.rumble(0.7, 0.6, 180);
         this.hud.triggerScreenFlash('nova');
-        this.particles.spawnShockwave(e.mesh.position.clone(), 0xff22cc, 15, 0.46);
-        this.hud.showArcadeStamp(
+        this.particles.spawnShockwave(e.mesh.position.clone(), 0xff22cc, 12, 0.42);
+        this.hud.showBanner('TAILGATER EXPOSED // BLAST HIM NOW!', 2.0, true);
+        this.hud.pushNotification(
           method === 'somersault' ? 'BACKFLIP REVERSAL!!' : 'AIRBRAKE OVERSHOOT!!',
-          'clear'
+          'stunt',
+          1.9
         );
-        this.hud.showBanner('TAILGATER EXPOSED IN FRONT // BLAST HIM NOW!', 2.2);
         const lineIdx = method === 'somersault' ? 0 : 1;
         const line = BANTER.tailgaterReversed[lineIdx];
         this.audio.enqueueVO(
@@ -935,11 +1069,10 @@ class BootNAssGame {
     this.renderer.pulseBloom(0.4);
     this.particles.flashLight(this.player.position, 0x00f0ff, 50, 0.42);
     this.hud.triggerScreenFlash('nova');
-    this.hud.showArcadeStamp('NOVA DETONATION!!', 'kill');
+    this.hud.pushNotification('NOVA SMART BOMB DETONATED!!', 'kill', 1.9);
     this.playCategoryBanter('novaBomb', 3.4, true);
-    this.particles.spawnShockwave(this.player.position.clone(), 0x00f0ff, 38, 0.75);
-    this.particles.spawnShockwave(this.player.position.clone(), 0xffd447, 28, 0.55);
-    this.hud.showBanner('NOVA SMART BOMB DETONATED!', 1.8);
+    this.particles.spawnShockwave(this.player.position.clone(), 0x00f0ff, 22, 0.65);
+    this.particles.spawnShockwave(this.player.position.clone(), 0xffd447, 17, 0.48);
 
     // Vaporize ALL enemy projectiles on screen!
     for (const p of this.projectiles.projectiles) {
@@ -980,29 +1113,30 @@ class BootNAssGame {
     this.multiKillCount += 1;
     this.multiKillWindow = 1.35;
     if (this.multiKillCount === 3) {
+      // Visual-only upper-third toast + quick synth chime so TRIPLE KILL never drowns out wingman banter!
       this.state.addBonusScore(300);
-      this.hud.showArcadeStamp('TRIPLE KILL! +300', 'kill');
+      this.hud.pushNotification('TRIPLE KILL! +300', 'kill', 1.75);
       this.audio.playMultiKillStinger(0);
-      void this.audio.playAnnouncerStinger('announcer-triple');
-      this.renderer.pulseBloom(0.18);
+      this.renderer.pulseBloom(0.16);
     } else if (this.multiKillCount === 4) {
+      // Visual-only upper-third toast + chime!
       this.state.addBonusScore(500);
-      this.hud.showArcadeStamp('QUAD KILL!! +500', 'kill');
+      this.hud.pushNotification('QUAD KILL!! +500', 'kill', 1.85);
       this.audio.playMultiKillStinger(1);
-      void this.audio.playAnnouncerStinger('announcer-quad');
-      this.renderer.pulseBloom(0.24);
+      this.renderer.pulseBloom(0.22);
     } else if (this.multiKillCount === 5) {
+      // Spoken announcer only on MEGA KILL / RAMPAGE with strict 15-second cooldown!
       this.state.addBonusScore(800);
-      this.hud.showArcadeStamp('MEGA KILL!! +800', 'kill');
+      this.hud.pushNotification('MEGA KILL!! +800', 'kill', 2.0);
       this.audio.playMultiKillStinger(2);
       void this.audio.playAnnouncerStinger('announcer-mega');
-      this.renderer.pulseBloom(0.3);
+      this.renderer.pulseBloom(0.28);
     } else if (this.multiKillCount === 7) {
       this.state.addBonusScore(1500);
-      this.hud.showArcadeStamp('BOOT N ASS RAMPAGE!!!', 'kill');
+      this.hud.pushNotification('BOOT N ASS RAMPAGE!!! +1500', 'kill', 2.2);
       this.audio.playMultiKillStinger(3);
       void this.audio.playAnnouncerStinger('announcer-rampage');
-      this.renderer.pulseBloom(0.38);
+      this.renderer.pulseBloom(0.34);
     }
   }
 
@@ -1018,7 +1152,7 @@ class BootNAssGame {
     this.hud.setCriticalHull(true, true);
     this.hud.updateWingmanHud(false, [], []);
     this.hud.updateTailgaterHud(false, 1, 0, false);
-    this.hud.showBanner('MAYDAY! MAYDAY! HULL INTEGRITY ZERO!', 2.5);
+    this.hud.showBanner('MAYDAY! MAYDAY! HULL INTEGRITY ZERO!', 2.5, true);
     this.hud.showArcadeStamp('MAYDAY // HULL BREACH!', 'death');
     this.playDramaticBanter('pilotDeath', 3.6);
   }
@@ -1049,13 +1183,14 @@ class BootNAssGame {
     }
 
     this.screenShake = 1.4;
-    this.bossClearDelay = 3.1;
+    // Full 3.8s meltdown + flyby beat (and waits reliably via bossVictoryPending until bossDeath VO finishes!)
+    this.bossVictoryPending = true;
+    this.bossClearDelay = 3.8;
     this.bossVictoryElapsed = 0;
-    this.bossCheckpointDist = null;
-    this.hud.setBossCheckpoint(false);
+    this.clearCheckpoint();
     this.audio.setMusicState(false);
-    this.hud.showBanner('REACTOR CRITICAL // CHAIN MELTDOWN!', 2.2);
-    this.playDramaticBanter('bossDeath', 3.4);
+    this.hud.showBanner('REACTOR CRITICAL // CHAIN MELTDOWN!', 2.8, true);
+    this.playDramaticBanter('bossDeath', 6.5);
   }
 
   private loop = (now: number): void => {
@@ -1107,6 +1242,15 @@ class BootNAssGame {
     );
 
     if (this.state.phase !== 'Playing') {
+      // On FRONTIER LIBERATED, route gamepad D-pad/stick + [A] directly into the 3-letter initials picker first!
+      if (this.state.phase === 'Victory' && this.hud.isInitialsPickerActive()) {
+        if (input.menuNavX !== 0 || input.menuNavY !== 0 || input.menuConfirmPressed) {
+          this.audio.unlock();
+          this.hud.handleInitialsInput(input.menuNavX, input.menuNavY, input.menuConfirmPressed);
+          return;
+        }
+      }
+
       // 100% Native Gamepad Menu Navigation across Boot, Crawl, Title, Hangar, Sector Select, Pause, Clear, GameOver, Victory!
       if (input.menuNavX !== 0 || input.menuNavY !== 0) {
         const delta = input.menuNavY !== 0 ? input.menuNavY : input.menuNavX;
@@ -1155,7 +1299,7 @@ class BootNAssGame {
         this.attractDist += 42 * dt;
         this.trackCurve.update(dt, this.attractDist, 0, false);
         this.env.update(dt, 42, false, this.trackCurve);
-        this.particles.update(dt, 42);
+        this.particles.update(dt, 42, this.renderer.camera.position);
         this.audio.updateMusic(dt);
         this.player.root.position.set(Math.sin(t * 0.7) * 3.5, Math.cos(t * 0.9) * 1.4, 0);
         this.player.root.rotation.set(0, 0, -Math.cos(t * 0.7) * 0.22 + this.trackCurve.bankRoll * 0.6);
@@ -1166,7 +1310,7 @@ class BootNAssGame {
       return;
     }
 
-    if (input.pausePressed && !this.playerDying && this.bossClearDelay <= 0 && !this.squadron.arrivalActive) {
+    if (input.pausePressed && !this.playerDying && !this.bossVictoryPending && !this.squadron.arrivalActive) {
       this.state.phase = 'Paused';
       this.hud.renderPhase('Paused', this.state, this.levels);
       return;
@@ -1177,6 +1321,10 @@ class BootNAssGame {
       return;
     }
     if (this.casualBanterCooldown > 0) this.casualBanterCooldown -= dt;
+    if (this.bossLineCooldown > 0) this.bossLineCooldown -= dt;
+    if (this.bossBlockHintCooldown > 0) this.bossBlockHintCooldown -= dt;
+    if (this.weaponPickupVoCooldown > 0) this.weaponPickupVoCooldown -= dt;
+    if (this.barrelRollVoCooldown > 0) this.barrelRollVoCooldown -= dt;
     if (this.allyHelpCooldown > 0) this.allyHelpCooldown -= dt;
     if (this.tailgaterWarnCooldown > 0) this.tailgaterWarnCooldown -= dt;
     if (this.turboBoostTimer > 0) this.turboBoostTimer -= dt;
@@ -1195,8 +1343,8 @@ class BootNAssGame {
     if (this.playerDying) {
       const slowSpeed = level.baseSpeed * 0.42;
       this.env.update(dt, slowSpeed, false, this.trackCurve);
-      this.projectiles.update(dt);
-      this.particles.update(dt, slowSpeed);
+      this.projectiles.update(dt, this.renderer.camera.position);
+      this.particles.update(dt, slowSpeed, this.renderer.camera.position);
       this.renderer.updateEffects(dt);
 
       const phase = this.player.updateDeathSequence(
@@ -1266,7 +1414,10 @@ class BootNAssGame {
         this.playerDying = false;
         this.hud.setCriticalHull(false, false);
         this.state.phase = 'GameOver';
-        this.hud.setBossCheckpoint(this.bossCheckpointDist !== null);
+        this.hud.setCheckpoint(
+          this.checkpointDist !== null,
+          this.checkpointKind === 'boss' ? 'BOSS' : 'MID-SECTOR'
+        );
         this.playCutsceneThen('gameover-eject', () => {
           this.hud.renderPhase('GameOver', this.state, this.levels);
           this.playCategoryBanter('gameOver', 4.0, true);
@@ -1275,9 +1426,9 @@ class BootNAssGame {
       return;
     }
 
-    // === EPIC BOSS CHAIN-REACTION MELTDOWN & VICTORY FLYBY SEQUENCE (3.1s!) ===
-    if (this.bossClearDelay > 0) {
-      this.bossClearDelay -= dt;
+    // === EPIC BOSS CHAIN-REACTION MELTDOWN & VICTORY FLYBY SEQUENCE (3.8s + waits for villain defeat line!) ===
+    if (this.bossVictoryPending) {
+      this.bossClearDelay = Math.max(0, this.bossClearDelay - dt);
       this.bossVictoryElapsed += dt;
       const flybySpeed = level.baseSpeed * 1.32;
       this.trackCurve.update(dt, this.timeline ? this.timeline.distance : 0, this.state.currentLevelIndex, false);
@@ -1289,8 +1440,8 @@ class BootNAssGame {
         this.bossVictoryElapsed,
         (pos, colorHex, size) => this.particles.spawnTrail(pos, colorHex, size, 0.25)
       );
-      this.projectiles.update(dt);
-      this.particles.update(dt, flybySpeed);
+      this.projectiles.update(dt, this.renderer.camera.position);
+      this.particles.update(dt, flybySpeed, this.renderer.camera.position);
       this.renderer.updateEffects(dt);
 
       if (Math.random() < 0.85) {
@@ -1320,21 +1471,24 @@ class BootNAssGame {
           this.hud.triggerScreenFlash('white');
           this.hud.showBanner('TARGET OBLITERATED // SECTOR CLEAR!', 2.6);
           this.hud.showArcadeStamp('TARGET OBLITERATED!!', 'clear');
-          this.particles.spawnFireball(finalPos, 0xffffff, 9.5, 0.55);
+          this.particles.spawnFireball(finalPos, 0xffffff, 4.0, 0.55);
           this.particles.flashLight(finalPos, 0x00f0ff, 65, 0.6);
           this.particles.burst(finalPos, 95, 0xffd447, 44, 2.2, 1.35, 1.8);
           this.particles.burst(finalPos, 70, 0x00f0ff, 38, 1.8, 1.15, 2.1);
           this.particles.burst(finalPos, 50, 0xff3355, 36, 1.7, 1.05, 1.9);
-          this.particles.spawnShockwave(finalPos, 0xffffff, 38, 0.55);
-          this.particles.spawnShockwave(finalPos, 0xffd447, 46, 0.72, true);
-          this.particles.spawnShockwave(finalPos, 0x00f0ff, 56, 0.96);
-          this.playCategoryBanter('levelClear', 4.2, true);
+          this.particles.spawnShockwave(finalPos, 0xffffff, 24, 0.55);
+          this.particles.spawnShockwave(finalPos, 0xffd447, 24, 0.72, true);
+          this.particles.spawnShockwave(finalPos, 0x00f0ff, 24, 0.96);
+          // Respect Boss Voice Priority: only speak levelClear banter if boss death VO already finished!
+          if (!this.audio.isBossVoPlaying()) {
+            this.playCategoryBanter('levelClear', 4.2, true);
+          }
         }
       );
 
       // Heroic sweeping victory follow camera!
       const cam = this.renderer.camera;
-      const sweepAngle = Math.min(1, this.bossVictoryElapsed / 2.8);
+      const sweepAngle = Math.min(1, this.bossVictoryElapsed / 3.4);
       const camTargetX = this.player.root.position.x * 0.4 + Math.sin(sweepAngle * Math.PI) * 3.8;
       const camTargetY = this.player.root.position.y * 0.35 + 1.4;
       cam.position.x += (camTargetX - cam.position.x) * Math.min(1, dt * 4.5);
@@ -1366,28 +1520,32 @@ class BootNAssGame {
         }
       );
 
-      if (this.bossClearDelay <= 0 && this.state.phase === 'Playing') {
+      const bossVoDone = !this.audio.isBossVoPlaying() || this.bossVictoryElapsed >= 7.2;
+      if (this.bossClearDelay <= 0 && bossVoDone && this.state.phase === 'Playing') {
+        this.bossVictoryPending = false;
+        this.bossVictoryElapsed = 0;
         this.state.stats.shieldRemaining = this.player.shield;
-        const { totalLevelScore, bootBucksEarned } = this.state.computeRank();
+        const { rank, totalLevelScore, bootBucksEarned } = this.state.computeRank();
         this.state.stats.bootBucksEarned = bootBucksEarned;
         this.meta.addBootBucks(bootBucksEarned);
-        this.state.totalCampaignScore += totalLevelScore;
+        this.state.recordSectorResult(this.state.currentLevelIndex + 1, rank, totalLevelScore);
 
         const isFinalSector = this.state.currentLevelIndex >= this.levels.length - 1;
         if (isFinalSector) {
           this.state.phase = 'Victory';
-          this.playCutsceneThen(
-            'victory-ending',
+          this.playCutsceneSequenceThen(
+            ['hyperspace-escape', 'victory-ending', 'frontier-liberated'],
             () => {
               this.audio.playMusicTrack('victory-fanfare', true, 0.52);
               this.hud.renderPhase('Victory', this.state, this.levels);
-            },
-            '/assets/videos/victory_cutscene.mp4'
+            }
           );
         } else {
           this.state.phase = 'LevelClear';
-          this.audio.playMusicTrack('victory-fanfare', true, 0.52);
-          this.hud.renderPhase('LevelClear', this.state, this.levels);
+          this.playCutsceneThen('cockpit-thumbsup', () => {
+            this.audio.playMusicTrack('victory-fanfare', true, 0.52);
+            this.hud.renderPhase('LevelClear', this.state, this.levels);
+          });
         }
       }
       return;
@@ -1442,8 +1600,8 @@ class BootNAssGame {
         (pos, colorHex, size) => this.particles.spawnTrail(pos, colorHex, size, 0.24)
       );
 
-      this.projectiles.update(dt);
-      this.particles.update(dt, slowSpeed);
+      this.projectiles.update(dt, this.renderer.camera.position);
+      this.particles.update(dt, slowSpeed, this.renderer.camera.position);
       this.audio.updateMusic(dt);
 
       // Heroic wide dynamic showcase camera watching Blitz & Tank streak past!
@@ -1482,8 +1640,7 @@ class BootNAssGame {
 
       if (arrivalDone) {
         this.hud.showSquadronArrival(false);
-        this.hud.showBanner('SQUADRON FORMED // PROTECT BLITZ & TANK!', 2.6);
-        this.hud.showArcadeStamp('WINGMEN ONLINE!', 'warp');
+        this.hud.pushNotification('SQUADRON FORMED // PROTECT BLITZ & TANK!', 'ally', 2.6);
       }
       return;
     }
@@ -1644,10 +1801,18 @@ class BootNAssGame {
       input.chargeReleased || fireChargeReleased
     );
 
-    // 4. Advance Level Timeline + Escalating Obstacle Intensity (or Mid-Boss Tactical Supply Drops!)
+    // 4. Advance Level Timeline + 50% Mid-Sector Checkpoint + Escalating Obstacle Intensity
     const diffCfg = this.state.difficultyConfig;
-    if (this.timeline && !this.boss.active && this.bossClearDelay <= 0) {
+    if (this.timeline && !this.boss.active && !this.bossVictoryPending) {
       this.timeline.advance(dt, railSpeed, (ev) => this.handleTimelineEvent(ev, level));
+
+      // Automatically save Mid-Sector Checkpoint at 50% progress!
+      if (!this.midCheckpointSaved && !this.boss.active && this.timeline.progress >= 0.5) {
+        this.midCheckpointSaved = true;
+        this.saveCheckpoint(this.timeline.distance, 'mid');
+        this.audio.playUiConfirm();
+        this.hud.pushNotification('CHECKPOINT REACHED // 50% SAVED', 'ally', 2.2);
+      }
 
       const lvlIdx = this.state.currentLevelIndex;
       const interval = lvlIdx === 0 ? 2.25 : lvlIdx === 1 ? 1.85 : 1.5;
@@ -1672,7 +1837,7 @@ class BootNAssGame {
           this.spawnAmbientPatrol(level);
         }
       }
-    } else if (this.boss.active && this.bossClearDelay <= 0) {
+    } else if (this.boss.active && !this.bossVictoryPending) {
       // Zorp Tactical Supply Drops during Boss Battles — grab Shield Rings & Weapon Crates mid-fight!
       this.bossSupplyTimer -= dt;
       if (this.bossSupplyTimer <= 0) {
@@ -1733,8 +1898,8 @@ class BootNAssGame {
       diffCfg.enemyHpMult,
       () => {
         this.audio.playBossAlarm();
-        this.hud.showBanner("I'MMA PUT BOOT N ASS // LASER SWEEP!", 1.8);
-        this.playCategoryBanter('bossBootNAss', 3.4, false, 1.0);
+        this.hud.showBanner('WARNING // INCOMING LASER SWEEP!', 1.8, true);
+        this.playCategoryBanter(Math.random() < 0.5 ? 'bossTaunt' : 'bossBootNAss', 3.4, false, 1.0);
       },
       (sparkPos) => {
         this.particles.burst(sparkPos, 6, 0xffaa22, 14, 0.7, 0.35);
@@ -1752,10 +1917,10 @@ class BootNAssGame {
       diffCfg.damageTakenMult,
       wingmanCb
     );
-    this.projectiles.update(dt, (pos) => {
+    this.projectiles.update(dt, this.renderer.camera.position, (pos) => {
       this.particles.spawnTrail(pos, 0xffd447, 0.42, 0.24);
     });
-    this.particles.update(dt, railSpeed);
+    this.particles.update(dt, railSpeed, this.renderer.camera.position);
     this.renderer.updateEffects(dt);
     this.state.updateComboTimer(dt);
     this.audio.updateMusic(dt);
@@ -1817,8 +1982,7 @@ class BootNAssGame {
 
           if (e.behavior === 'tail_stalker') {
             this.hud.spawnFloatingText(sp.x, sp.y, `TAIL SHAKEN! +${points.toLocaleString()}`, '#ff66ee');
-            this.hud.showArcadeStamp('TAILGATER VAPORIZED!!', 'clear');
-            this.hud.showBanner('TAIL CLEAR // BONUS SUPPLY DROPPED!', 2.2);
+            this.hud.pushNotification('TAILGATER VAPORIZED // BONUS SUPPLY!', 'stunt', 2.1);
             this.spawnBossPickupAt(
               level,
               this.player.shield < this.player.maxShield * 0.7 ? 'boost_ring' : 'weapon_crate',
@@ -1842,7 +2006,7 @@ class BootNAssGame {
           this.screenShake = Math.max(this.screenShake, isMegaFoe ? 0.56 : isMediumFoe ? 0.36 : 0.26);
           if (enteredOverdrive) {
             this.renderer.pulseBloom(0.32);
-            this.hud.showBanner('10x OVERDRIVE // TRIPLE PLASMA', 2.2);
+            this.hud.pushNotification('10x OVERDRIVE // TRIPLE PLASMA', 'upgrade', 2.2);
             this.playCategoryBanter('overdrive', 3.8, false, 0.85);
           } else if (this.state.stats.combo === 6 || this.state.stats.combo === 12) {
             this.playCategoryBanter('streak', 3.4, false, 0.55);
@@ -1884,16 +2048,21 @@ class BootNAssGame {
         },
         onBossPartHit: (_part, pos, phaseBreak, bossDefeated, partDestroyed, blocked, shatteredShield) => {
           if (blocked) {
-            this.audio.playDeflect();
-            this.particles.burst(pos, 8, 0x00f0ff, 14, 0.7, 0.28);
-            const sp = this.projectToScreen(pos);
-            const hint =
-              this.boss.bossId === 'octa_core_sentinel'
-                ? 'REFLECT ORBS!'
-                : this.boss.bossId === 'solaris_leviathan'
-                  ? 'BLAST SEGMENTS!'
-                  : 'SHIELDED!';
-            this.hud.spawnFloatingText(sp.x, sp.y, hint, '#00f0ff');
+            this.particles.burst(pos, 6, 0x00f0ff, 14, 0.65, 0.24);
+            if (this.bossBlockHintCooldown <= 0) {
+              this.bossBlockHintCooldown = 0.28;
+              this.audio.playDeflect();
+              const sp = this.projectToScreen(pos);
+              const hint =
+                this.boss.phaseShiftInvulnTimer > 0
+                  ? 'PHASE SHIFT!'
+                  : this.boss.bossId === 'octa_core_sentinel'
+                    ? 'REFLECT ORBS!'
+                    : this.boss.bossId === 'solaris_leviathan'
+                      ? 'BLAST SEGMENTS!'
+                      : 'SHIELDED!';
+              this.hud.spawnFloatingText(sp.x, sp.y, hint, '#00f0ff');
+            }
             return;
           }
 
@@ -1943,16 +2112,23 @@ class BootNAssGame {
             this.audio.playExplosion(true);
             this.input.rumble(0.95, 0.8, 320);
             this.hud.triggerScreenFlash('gold');
-            this.hud.showArcadeStamp('PHASE 2 // CORE EXPOSED!', 'clear');
-            this.particles.spawnShockwave(this.boss.root.position.clone(), 0xffd447, 26, 0.7);
+            this.particles.spawnShockwave(this.boss.root.position.clone(), 0xffd447, 22, 0.65);
             this.screenShake = 1.1;
-            this.hud.showBanner("PHASE 2 // I'MMA PUT BOOT N ASS!", 2.8);
-            this.playCategoryBanter('bossBootNAss', 3.8, true);
+            this.hud.showBanner(
+              this.boss.bossId === 'octa_core_sentinel'
+                ? 'PHASE 2 // SENTINEL PHASE SHIFT!'
+                : this.boss.bossId === 'aegis_dreadnought'
+                  ? 'PHASE 2 // CORE SHIFTING — LASER SWEEP INCOMING!'
+                  : 'PHASE 2 // CORE EXPOSED!',
+              2.6,
+              true
+            );
+            this.playCategoryBanter('bossBootNAss', 4.5, true);
             window.setTimeout(() => {
-              if (this.boss.active && this.state.phase === 'Playing') {
+              if (this.boss.active && this.state.phase === 'Playing' && !this.audio.isBossVoPlaying()) {
                 this.playCategoryBanter(Math.random() < 0.55 ? 'gruntPanic' : 'bossPhase2', 4.0, false, 1.0);
               }
-            }, 3900);
+            }, 5600);
           }
 
           if (bossDefeated) {
@@ -1962,7 +2138,7 @@ class BootNAssGame {
         onPlayerDamaged: (amt, pos, source) => {
           this.state.stats.hullDamageTaken += amt;
           this.state.resetCombo();
-          this.audio.playPlayerHit();
+          this.audio.playPlayerHit(source === 'obstacle' || source === 'beam');
           this.input.rumble(0.85, 0.65, 220);
           this.hud.triggerDamageFlash();
           this.particles.burst(pos, 18, 0xff3355, 20, 1.0, 0.48);
@@ -2051,14 +2227,15 @@ class BootNAssGame {
             const nextMode = this.player.weaponMode === 'spread' ? 'spread' : 'gatling';
             this.player.grantWeaponUpgrade(nextMode, Math.max(this.player.weaponTimer + 4.5, 6.5));
             this.hud.spawnFloatingText(sp.x, sp.y, `OVERCLOCK +${pts}!`, '#ffd447');
-            this.hud.showBanner('OVERCLOCK WARP // SQUAD HEALED + WEAPONS SURGED!', 1.5);
+            this.hud.pushNotification('OVERCLOCK WARP // SQUAD HEALED + WEAPONS SURGED!', 'stunt', 1.8);
           } else {
             this.squadron.healSquad(8);
             const label = streakMult >= 2 ? `TURBO CHAIN x${streakMult}! +${pts}` : `TURBO +${pts}!`;
             this.hud.spawnFloatingText(sp.x, sp.y, label, '#00ff88');
-            this.hud.showBanner(
+            this.hud.pushNotification(
               streakMult >= 2 ? `TURBO GATE STREAK x${streakMult} // +${pts}` : `TURBO GATE // +${pts}`,
-              1.2
+              'stunt',
+              1.5
             );
           }
         },
@@ -2068,21 +2245,21 @@ class BootNAssGame {
           this.renderer.pulseBloom(0.24);
           this.particles.flashLight(obs.mesh.position, 0xd946ff, 26, 0.26);
           this.particles.burst(obs.mesh.position, 26, 0xd946ff, 22, 1.1, 0.55);
-          this.particles.spawnShockwave(obs.mesh.position, 0xd946ff, 12, 0.42);
+          this.particles.spawnShockwave(obs.mesh.position, 0xd946ff, 11, 0.4);
           this.playCategoryBanter('weaponPickup', 3.0, false, 0.45);
           const dur = this.meta.weaponDurationSec;
           const pick = Math.floor(Math.random() * 3);
           if (pick === 0) {
             this.player.grantWeaponUpgrade('spread', dur);
-            this.hud.showBanner('UPGRADE // 5-WAY SPREAD LASER!', 2.2);
+            this.hud.pushNotification('UPGRADE // 5-WAY SPREAD LASER!', 'upgrade', 2.2);
             this.hud.showComms('mechanic', 'Zorp special! 5-Way Spread Laser installed—fry those tin cans!', 3.2);
           } else if (pick === 1) {
             this.player.grantWeaponUpgrade('gatling', dur);
-            this.hud.showBanner('UPGRADE // HYPER GATLING CANNONS!', 2.2);
+            this.hud.pushNotification('UPGRADE // HYPER GATLING CANNONS!', 'upgrade', 2.2);
             this.hud.showComms('mechanic', 'Hyper Gatling online! Hold the trigger and watch the fireworks!', 3.2);
           } else {
             this.player.addNovaBomb();
-            this.hud.showBanner('UPGRADE // +1 NOVA SMART BOMB [B/X]!', 2.2);
+            this.hud.pushNotification('UPGRADE // +1 NOVA SMART BOMB [B/X]!', 'upgrade', 2.2);
             this.hud.showComms('mechanic', 'Fresh Nova Smart Bomb loaded! Press B or X to clear the whole screen!', 3.2);
           }
         },
@@ -2181,6 +2358,7 @@ class BootNAssGame {
         name: this.boss.displayName,
         phase: this.boss.phase,
         hpPct: this.boss.maxTotalHp > 0 ? this.boss.totalHp / this.boss.maxTotalHp : 0,
+        phaseShift: this.boss.phaseShiftInvulnTimer > 0,
       },
       {
         nearX: nearScreen.x,
@@ -2240,9 +2418,9 @@ class BootNAssGame {
     }
 
     if (dropKind === 'weapon_crate') {
-      this.hud.showBanner('ZORP SUPPLY DROP // GRAB WEAPON UPGRADE!', 2.0);
+      this.hud.pushNotification('ZORP SUPPLY DROP // WEAPON UPGRADE!', 'upgrade', 2.0);
     } else {
-      this.hud.showBanner('ZORP SUPPLY DROP // GRAB SHIELD RING!', 2.0);
+      this.hud.pushNotification('ZORP SUPPLY DROP // SHIELD RING!', 'ally', 2.0);
     }
     this.playCategoryBanter('zorpSupply', 3.4, false, 0.75);
   }
@@ -2311,18 +2489,27 @@ class BootNAssGame {
         sCol
       );
     } else if (roll === 4) {
-      this.obstacles.spawn(
-        {
-          atDistance: 0,
-          type: 'obstacle',
-          kind: 'spinner_cross',
-          position: { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 2.5 },
-          scale: 0.95 + Math.random() * 0.25,
-          rotationSpeed: (Math.random() < 0.5 ? 1 : -1) * (1.1 + this.state.currentLevelIndex * 0.25),
-        },
-        pCol,
-        sCol
+      // Avoid stacking an ambient spinning blade right on top of another active blade/laser bar!
+      const hasCloseBlade = this.obstacles.obstacles.some(
+        (o) =>
+          o.alive &&
+          (o.kind === 'spinner_cross' || o.kind === 'laser_bar') &&
+          o.logicalPos.z < -85
       );
+      if (!hasCloseBlade) {
+        this.obstacles.spawn(
+          {
+            atDistance: 0,
+            type: 'obstacle',
+            kind: 'spinner_cross',
+            position: { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 2.5 },
+            scale: 0.95 + Math.random() * 0.25,
+            rotationSpeed: (Math.random() < 0.5 ? 1 : -1) * (1.1 + this.state.currentLevelIndex * 0.25),
+          },
+          pCol,
+          sCol
+        );
+      }
     } else {
       // Collectible floating Weapon Upgrade / Nova Bomb crate!
       this.obstacles.spawn(
@@ -2415,10 +2602,13 @@ class BootNAssGame {
 
   private handleTimelineEvent(ev: TimelineEvent, level: LevelConfig): void {
     if (ev.type === 'banner') {
-      this.hud.showBanner(ev.text, 2.6);
-      if (ev.text.includes('WARNING') || ev.text.includes('BOSS') || ev.text.includes('SIGNATURE')) {
+      const isCrit = ev.text.includes('WARNING') || ev.text.includes('BOSS') || ev.text.includes('SIGNATURE');
+      if (isCrit) {
+        this.hud.showBanner(ev.text, 2.6, true);
         this.audio.playBossAlarm();
         this.playCategoryBanter('bossWarning', 4.2, true);
+      } else {
+        this.hud.pushNotification(ev.text, 'stunt', 2.2);
       }
     } else if (ev.type === 'wave') {
       this.enemies.spawnWave(ev, this.state.difficultyConfig.enemyHpMult);
@@ -2445,8 +2635,7 @@ class BootNAssGame {
         slalom_wave: 'HIGH-G S-CHICANE!',
       };
       const stamp = stampMap[ev.stunt];
-      this.hud.showBanner(ev.label ?? stamp, 2.2);
-      this.hud.showArcadeStamp(stamp, 'warp');
+      this.hud.pushNotification(ev.label ?? stamp, 'stunt', 2.2);
       if (ev.stunt === 'loop') {
         this.playCategoryBanter('stuntLoop', 3.2, false, 0.65);
       } else if (ev.stunt === 'corkscrew') {
@@ -2468,13 +2657,12 @@ class BootNAssGame {
         }
       } else {
         this.audio.playWarpEntry();
-        this.hud.showBanner('FULL SQUADRON DEPLOYED // BLITZ & TANK ON WING!', 2.8);
+        this.hud.pushNotification('FULL SQUADRON DEPLOYED // BLITZ & TANK ON WING!', 'ally', 2.6);
         this.playCategoryBanter('squadS3Start', 4.2, true);
       }
     } else if (ev.type === 'boss') {
-      // Record boss checkpoint so losing at the boss restarts RIGHT HERE!
-      this.bossCheckpointDist = ev.atDistance;
-      this.hud.setBossCheckpoint(true);
+      // Save Boss Checkpoint right before the boss intro so losing at the boss respawns RIGHT HERE!
+      this.saveCheckpoint(Math.max(0, ev.atDistance - 20), 'boss');
       const bossVideo = BOSS_CUTSCENE_MAP[ev.bossId];
       const launchBossFight = () => {
         this.enemies.disengageTailgatersForBoss();
@@ -2482,10 +2670,23 @@ class BootNAssGame {
         this.bossSupplyTimer = 7.5;
         this.bossSupplyCycle = 0;
         this.bossPartsDestroyedCount = 0;
-        this.boss.spawn(ev, this.state.difficultyConfig.bossHpMult);
+        // Per-boss difficulty HP pacing:
+        // - Boss 1 (Aegis Dreadnought): +50% on Ace, +80% on Maximum Boot-N-Ass!
+        // - Boss 2 (Octa-Core Sentinel): +30% on Ace & Maximum!
+        let bossTuningMult = 1.0;
+        if (ev.bossId === 'aegis_dreadnought') {
+          if (this.state.difficulty === 'ace') bossTuningMult = 1.5;
+          else if (this.state.difficulty === 'maximum') bossTuningMult = 1.8;
+        } else if (
+          ev.bossId === 'octa_core_sentinel' &&
+          (this.state.difficulty === 'ace' || this.state.difficulty === 'maximum')
+        ) {
+          bossTuningMult = 1.3;
+        }
+        this.boss.spawn(ev, this.state.difficultyConfig.bossHpMult * bossTuningMult);
         this.audio.playMusicTrack('boss-battle', true, 0.44, 0.78);
         this.audio.playBossAlarm();
-        this.hud.showBanner(`WARNING // ${ev.name} — I'MMA PUT BOOT N ASS!`, 3.2);
+        this.hud.showBanner(`WARNING // ${ev.name}`, 3.0, true);
         this.playCategoryBanter('bossBootNAss', 4.2, true);
       };
       if (bossVideo && !this.skipNextBossCutscene) {

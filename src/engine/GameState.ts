@@ -109,6 +109,7 @@ export class GameState {
   public phase: GamePhase = 'Boot';
   public currentLevelIndex = 0;
   public totalCampaignScore = 0;
+  public sectorRanks: Array<{ sector: number; rank: 'S' | 'A' | 'B' | 'C'; score: number }> = [];
   public difficulty: DifficultyId = 'ace'; // ACE is Recommended Default!
   public mouseAimEnabled = false;
   public muted = false;
@@ -216,6 +217,23 @@ export class GameState {
     };
   }
 
+  public resetCampaign(): void {
+    this.totalCampaignScore = 0;
+    this.sectorRanks = [];
+  }
+
+  public recordSectorResult(sector: number, rank: 'S' | 'A' | 'B' | 'C', score: number): void {
+    const existing = this.sectorRanks.find((r) => r.sector === sector);
+    if (existing) {
+      existing.rank = rank;
+      existing.score = score;
+    } else {
+      this.sectorRanks.push({ sector, rank, score });
+      this.sectorRanks.sort((a, b) => a.sector - b.sector);
+    }
+    this.totalCampaignScore = this.sectorRanks.reduce((sum, r) => sum + r.score, 0);
+  }
+
   public resetLevelStats(maxShield = 100): void {
     this.stats = this.createFreshStats(maxShield);
   }
@@ -286,12 +304,12 @@ export class GameState {
     const accuracy = this.getAccuracyPercent();
     const hullDmgPct = this.getHullDamagePercent();
     const gates = this.stats.turboGatesHit;
-    const bossTime = Math.round(this.stats.bossClearTimeSec);
+    const bossTime = this.stats.bossClearTimeSec > 0 ? Math.round(this.stats.bossClearTimeSec * 10) / 10 : 0;
 
     const cAcc = accuracy >= 60;
     const cHull = hullDmgPct < 25;
     const cGates = gates >= 2;
-    const cBoss = bossTime > 0 ? bossTime <= 70 : true;
+    const cBoss = bossTime > 0 && bossTime <= 75;
 
     const passedCount = [cAcc, cHull, cGates, cBoss].filter(Boolean).length;
 
@@ -303,7 +321,7 @@ export class GameState {
     let rank: 'S' | 'A' | 'B' | 'C' = 'C';
     if (passedCount === 4) rank = 'S';
     else if (passedCount === 3) rank = 'A';
-    else if (passedCount >= 2 || totalLevelScore >= 5000) rank = 'B';
+    else if (passedCount >= 2) rank = 'B';
 
     return {
       rank,
@@ -316,8 +334,8 @@ export class GameState {
         { label: 'TURBO GATES HIT', actual: `${gates}`, target: '>= 2', passed: cGates },
         {
           label: 'BOSS CLEAR TIME',
-          actual: bossTime > 0 ? `${bossTime}s` : '—',
-          target: '<= 70s',
+          actual: bossTime > 0 ? `${bossTime.toFixed(1)}s` : '—',
+          target: '<= 75s',
           passed: cBoss,
         },
       ],
